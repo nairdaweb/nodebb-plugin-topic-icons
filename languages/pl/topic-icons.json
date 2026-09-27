@@ -1,0 +1,29 @@
+{
+	"icon.question": "Pytanie",
+	"icon.guide": "Poradnik",
+	"icon.problem": "Problem",
+	"icon.idea": "Pomysł",
+	"icon.project": "Projekt",
+	"icon.showcase": "Pokaz",
+	"icon.announcement": "Ogłoszenie",
+	"icon.discussion": "Dyskusja",
+	"icon-generic": "Ikona tematu",
+
+	"choose": "Wybierz miniaturę",
+	"choose-current": "Ikona tematu: %1",
+	"picker-title": "Wybierz miniaturę tematu",
+	"picker-help": "Wybierz ikonę dla tematu. Na liście są tylko ikony dostępne w tej kategorii.",
+	"picker-none": "Bez ikony",
+	"picker-default": "Domyślna kategorii",
+	"picker-preview": "Podgląd",
+	"picker-preview-title": "Tytuł Twojego tematu",
+	"picker-just-now": "przed chwilą",
+	"picker-empty": "W tej kategorii nie ma ikon.",
+	"picker-cancel": "Anuluj",
+	"picker-select": "Użyj tej ikony",
+	"picker-load-error": "Nie udało się wczytać ikon.",
+
+	"error.unknown-icon": "Ta ikona tematu nie istnieje albo jest wyłączona.",
+	"error.not-in-category": "Ta ikona tematu nie jest dostępna w wybranej kategorii.",
+	"error.no-privileges": "Nie możesz ustawić ikony tego tematu."
+}

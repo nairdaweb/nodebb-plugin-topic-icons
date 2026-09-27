@@ -1,0 +1,29 @@
+{
+	"icon.question": "Question",
+	"icon.guide": "Guide",
+	"icon.problem": "Problem",
+	"icon.idea": "Idea",
+	"icon.project": "Project",
+	"icon.showcase": "Showcase",
+	"icon.announcement": "Announcement",
+	"icon.discussion": "Discussion",
+	"icon-generic": "Topic icon",
+
+	"choose": "Choose icon",
+	"choose-current": "Topic icon: %1",
+	"picker-title": "Choose a topic icon",
+	"picker-help": "Pick an icon for your topic. Only icons available in this category are listed.",
+	"picker-none": "No icon",
+	"picker-default": "Category default",
+	"picker-preview": "Preview",
+	"picker-preview-title": "Your topic title",
+	"picker-just-now": "just now",
+	"picker-empty": "There are no icons in this category.",
+	"picker-cancel": "Cancel",
+	"picker-select": "Use this icon",
+	"picker-load-error": "Could not load the icons.",
+
+	"error.unknown-icon": "This topic icon does not exist or is switched off.",
+	"error.not-in-category": "This topic icon is not available in the selected category.",
+	"error.no-privileges": "You are not allowed to set the icon of this topic."
+}

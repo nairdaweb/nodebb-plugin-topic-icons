@@ -1,0 +1,31 @@
+{
+	"id": "nodebb-plugin-topic-icons",
+	"url": "https://github.com/nairdaweb/nodebb-plugin-topic-icons",
+	"library": "library.js",
+	"hooks": [
+		{ "hook": "static:app.load", "method": "init" },
+		{ "hook": "static:api.routes", "method": "addApiRoutes" },
+		{ "hook": "filter:admin.header.build", "method": "addAdminNavigation" },
+		{ "hook": "filter:settings.set", "method": "onSettingsSave" },
+		{ "hook": "action:settings.set", "method": "onSettingsSet" },
+		{ "hook": "filter:topic.post", "method": "onTopicPost" },
+		{ "hook": "filter:topic.create", "method": "onTopicCreate" },
+		{ "hook": "filter:post.edit", "method": "onPostEdit" },
+		{ "hook": "filter:topic.edit", "method": "onTopicEdit" },
+		{ "hook": "filter:topics.get", "method": "onTopicsGet" },
+		{ "hook": "filter:topic.get", "method": "onTopicGet" },
+		{ "hook": "filter:middleware.render", "method": "onRender", "priority": 20 }
+	],
+	"scss": ["scss/topic-icons.scss"],
+	"scripts": ["public/client.js"],
+	"modules": {
+		"../admin/plugins/topic-icons.js": "public/admin.js",
+		"topic-icons/icons.js": "lib/icons.js"
+	},
+	"staticDirs": {
+		"icons": "static/icons"
+	},
+	"templates": "templates",
+	"languages": "languages",
+	"defaultLang": "en-GB"
+}

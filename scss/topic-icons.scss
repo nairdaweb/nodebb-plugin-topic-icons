@@ -1,0 +1,183 @@
+// nodebb-plugin-topic-icons: icon, composer button and picker styles.
+// Every size is a custom property, so themes can change them without overriding rules:
+//   --topic-icon-size        icon in topic lists (40px, 32px on phones)
+//   --topic-icon-size-header icon in the topic header
+//   --topic-icon-size-inline icon put in front of a title by public/client.js
+//   --topic-icon-radius      corner radius
+
+:root {
+	--topic-icon-size: 40px;
+	--topic-icon-size-header: 2.5rem;
+	--topic-icon-size-inline: 1.75rem;
+	--topic-icon-radius: 0.5rem;
+}
+
+@media (max-width: 575.98px) {
+	:root {
+		--topic-icon-size: 32px;
+		--topic-icon-size-header: 2rem;
+		--topic-icon-size-inline: 1.5rem;
+	}
+}
+
+.topic-icon {
+	display: inline-flex;
+	flex-shrink: 0;
+	width: var(--topic-icon-size);
+	height: var(--topic-icon-size);
+	border-radius: var(--topic-icon-radius);
+	overflow: hidden;
+	vertical-align: middle;
+
+	.topic-icon__img {
+		display: block;
+		width: 100%;
+		height: 100%;
+		object-fit: contain;
+	}
+}
+
+// A category default is a hint, not the author's choice.
+.topic-icon--default {
+	opacity: 0.75;
+}
+
+// Fallback placement (themes without a slot): in front of the title.
+.topic-icons-inline {
+	display: inline-flex;
+	margin-inline-end: 0.5rem;
+	vertical-align: middle;
+
+	.topic-icon {
+		width: var(--topic-icon-size-inline);
+		height: var(--topic-icon-size-inline);
+		border-radius: calc(var(--topic-icon-radius) * 0.75);
+	}
+}
+
+.topic-icons-inline--header .topic-icon {
+	width: var(--topic-icon-size-header);
+	height: var(--topic-icon-size-header);
+}
+
+// Composer button, next to the title field.
+.topic-icons-btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5rem;
+	flex-shrink: 0;
+	align-self: stretch;
+	padding: 0.25rem 0.5rem;
+
+	&.hidden {
+		display: none;
+	}
+
+	.topic-icons-btn__visual {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 1.75rem;
+		height: 1.75rem;
+		border-radius: calc(var(--topic-icon-radius) * 0.75);
+		overflow: hidden;
+
+		img {
+			width: 100%;
+			height: 100%;
+			object-fit: contain;
+		}
+	}
+
+	.topic-icons-btn__visual--default {
+		opacity: 0.6;
+	}
+}
+
+// Picker dialog.
+.topic-icons-picker__grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr));
+	gap: 0.5rem;
+	max-height: min(50vh, 22rem);
+	overflow-y: auto;
+	padding: 2px;
+}
+
+.topic-icons-picker__opt {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 0.35rem;
+	min-height: 5.5rem;
+	padding: 0.5rem 0.25rem;
+	border: 1px solid var(--bs-border-color);
+	border-radius: var(--bs-border-radius, 0.375rem);
+	background: transparent;
+	color: inherit;
+	font-size: 0.8125rem;
+	line-height: 1.2;
+
+	&:hover {
+		background: var(--bs-tertiary-bg);
+	}
+
+	&:focus-visible {
+		outline: 2px solid var(--bs-primary);
+		outline-offset: 2px;
+	}
+
+	&[aria-checked="true"] {
+		border-color: var(--bs-primary);
+		box-shadow: inset 0 0 0 1px var(--bs-primary);
+		background: var(--bs-primary-bg-subtle);
+	}
+
+	.topic-icon {
+		width: 2.5rem;
+		height: 2.5rem;
+	}
+}
+
+.topic-icons-picker__none {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 2.5rem;
+	height: 2.5rem;
+	font-size: 1.5rem;
+	opacity: 0.5;
+}
+
+.topic-icons-picker__name {
+	max-width: 100%;
+	overflow: hidden;
+	text-align: center;
+	text-overflow: ellipsis;
+	overflow-wrap: anywhere;
+}
+
+.topic-icons-preview .topic-icon {
+	width: var(--topic-icon-size);
+	height: var(--topic-icon-size);
+}
+
+// ACP library previews.
+.topic-icons-acp__img {
+	width: 40px;
+	height: 40px;
+	object-fit: contain;
+	border-radius: 0.375rem;
+}
+
+@media (forced-colors: active) {
+	.topic-icons-picker__opt[aria-checked="true"] {
+		outline: 2px solid Highlight;
+	}
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	.topic-icons-picker__opt {
+		transition: background-color 0.15s, border-color 0.15s;
+	}
+}
