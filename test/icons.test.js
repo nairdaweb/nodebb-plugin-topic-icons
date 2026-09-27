@@ -73,6 +73,8 @@ test('validateSettings reports problems with row numbers only', () => {
 	assert.deepEqual(good.errors, []);
 	assert.equal(good.settings.showInTopic, 'off');
 	assert.equal(good.settings.showInList, 'on');
+	assert.deepEqual(Object.keys(I.validateSettings({ icons: '[]', undefined: '[]', other: 'x' }).settings).sort(),
+		['categoryDefaults', 'chooser', 'chooserGroup', 'defaultIcon', 'icons', 'showInList', 'showInTopic']);
 	assert.deepEqual(JSON.parse(good.settings.icons).map(i => i.id), ['question', 'linux', 'old']);
 	assert.equal(I.validateSettings({ icons: '{' }).errors[0], '[[admin/plugins/topic-icons:error.icons-json]]');
 });
