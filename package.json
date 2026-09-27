@@ -1,0 +1,55 @@
+{
+  "name": "nodebb-plugin-topic-icons",
+  "version": "1.0.0",
+  "description": "Topic icons for NodeBB 4: authors pick an icon from an admin-managed library in the composer; icons appear in topic lists and topic headers. Per-category icon sets and defaults, permissions, server-side validation; translated (en-GB, pl).",
+  "main": "library.js",
+  "license": "MIT",
+  "author": "nairda <nairda@wirelab.pl> (https://wirelab.pl)",
+  "homepage": "https://github.com/nairdaweb/nodebb-plugin-topic-icons#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nairdaweb/nodebb-plugin-topic-icons.git"
+  },
+  "bugs": {
+    "url": "https://github.com/nairdaweb/nodebb-plugin-topic-icons/issues"
+  },
+  "keywords": [
+    "nodebb",
+    "plugin",
+    "nodebb-plugin",
+    "topic",
+    "icons",
+    "thumbnails",
+    "composer",
+    "categories"
+  ],
+  "nbbpm": {
+    "compatibility": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "library.js",
+    "plugin.json",
+    "lib/",
+    "public/",
+    "scss/",
+    "static/",
+    "templates/",
+    "languages/",
+    "README.md",
+    "README.pl.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "lint": "eslint ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "eslint": "^9.0.0",
+    "globals": "^15.0.0"
+  }
+}
