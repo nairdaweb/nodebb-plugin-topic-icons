@@ -3,18 +3,20 @@
 /*
  * nodebb-plugin-topic-icons: server entry point (declared as "library" in plugin.json).
  *
- * Wires the pure modules in lib/ (icon library, upload checks, language choice, LRU cache) into
- * NodeBB 4.x hooks:
- * - the icon library and its settings live in the plugin settings hash (meta.settings), so the
- *   plugin needs no tables of its own and works with Redis, MongoDB and PostgreSQL;
- * - the icon picked for a topic is one field of the topic object: topic:<tid> → iconId;
- * - the choice is validated on the server when a topic is posted (also from the post queue) and
- *   when its first post is edited: the icon must exist, be active, be offered in the category,
- *   and the user must be allowed to choose (only the author or a moderator may change it);
- * - lists of topics get `topicIcon` from fields NodeBB has already loaded (no extra query), the
- *   topic page gets it too; everything is rendered in the viewer's language (see "Language").
+ * Wires the pure modules in lib/ (icon library, rules, upload checks, language choice, caches)
+ * into NodeBB 4.x hooks:
+ * - the icon library and its settings live in the plugin settings hash (meta.settings);
+ * - the icon picked for a topic is one field of the topic object: topic:<tid> → iconId, and the
+ *   topic is listed in a per-icon sorted set, so that removing an icon from the library can clear
+ *   it from its topics; nothing else is stored, so it works with Redis, MongoDB and PostgreSQL;
+ * - the choice is validated on the server when a topic is posted, when it is put in the post
+ *   queue, and when its first post is edited (lib/rules.js); a topic moved to a category where
+ *   its icon is not available loses it;
+ * - lists of topics get `topicIcon` from fields NodeBB has already loaded (no extra topic query),
+ *   the topic page gets it too; everything is rendered in the viewer's language (see "Language").
  *
- * Every exported method below is referenced by name from plugin.json.
+ * The hook handlers below are referenced by name from plugin.json; getTopicIcons is an API for
+ * other plugins and themes.
  */
 
 const crypto = require('crypto');
@@ -33,17 +35,23 @@ const categories = require.main.require('./src/categories');
 const privileges = require.main.require('./src/privileges');
 const pubsub = require.main.require('./src/pubsub');
 const translator = require.main.require('./src/translator');
+const languages = require.main.require('./src/languages');
+const utils = require.main.require('./src/utils');
 const file = require.main.require('./src/file');
 const middleware = require.main.require('./src/middleware');
 const uploadMiddleware = require.main.require('./src/middleware/multer');
 const routeHelpers = require.main.require('./src/routes/helpers');
 const controllerHelpers = require.main.require('./src/controllers/helpers');
+const batch = require.main.require('./src/batch');
 
 const icons = require('./lib/icons');
+const rules = require('./lib/rules');
 const upload = require('./lib/upload');
 const LRU = require('./lib/lru');
 const ConfigStore = require('./lib/config-store');
 const { pickLang, isLangCode } = require('./lib/lang');
+
+const { isLocalUid } = rules;
 
 /** Hash under which meta.settings stores the plugin configuration (also used by public/admin.js). */
 const SETTINGS_KEY = 'topic-icons';
@@ -53,6 +61,10 @@ const UPLOAD_FOLDER = 'topic-icons';
 const TOPIC_FIELD = 'iconId';
 /** Name of the field in the composer / API payload (topics.post and posts.edit). */
 const PAYLOAD_FIELD = 'iconId';
+/** Most topics getTopicIcons() renders in one call. */
+const MAX_TIDS = 500;
+/** Most topics the /topic-icons/icons route renders in one request. */
+const MAX_RELOCALIZE = 100;
 
 const plugin = module.exports;
 
@@ -100,13 +112,13 @@ function invalidate() {
 
 // ---------------------------------------------------------------- language
 
-/**
- * @param {*} uid
- * @returns {boolean} true for a positive integer uid (not guests, system or remote users)
+/*
+ * Language setting per uid ('' = none). Topic lists call getLang() on every request, and
+ * user.getSettings() has no cache in NodeBB; entries are dropped when the user saves their
+ * settings in this process (action:user.saveSettings) and expire after a minute, so a change
+ * made through another process shows up soon as well.
  */
-function isLocalUid(uid) {
-	return /^\d+$/.test(String(uid)) && parseInt(uid, 10) > 0;
-}
+const langCache = new LRU(5000, { ttl: 60 * 1000 });
 
 /**
  * Language of a user: their own setting, otherwise the forum default. Used where only a uid is
@@ -118,16 +130,37 @@ function isLocalUid(uid) {
 async function getLang(uid) {
 	let userLang;
 	if (isLocalUid(uid)) {
-		const settings = await user.getSettings(uid);
-		userLang = settings && settings.userLang;
+		const key = String(uid);
+		userLang = langCache.get(key);
+		if (userLang === undefined) {
+			const settings = await user.getSettings(uid);
+			userLang = (settings && isLangCode(settings.userLang) && settings.userLang) || '';
+			langCache.set(key, userLang);
+		}
 	}
 	return pickLang({ userLang, defaultLang: meta.config.defaultLang });
 }
 
 /**
- * Language of the viewer of a request: ?lang= (also set for guests from the browser language by
- * the core autoLocale middleware, on page, ajaxify and API routes) → the user's setting (from
- * res.locals.config on full page loads, from the database otherwise) → the forum default.
+ * Languages installed on the forum; guests' browser language is matched against them.
+ *
+ * @returns {Promise<string[]>}
+ */
+async function installedLangs() {
+	try {
+		return await languages.listCodes();
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * Language of the viewer of a request: ?lang= (validated against the installed languages by
+ * the core autoLocale middleware, which also sets it for guests from the browser language on
+ * page and ajaxify routes) → the user's setting (from res.locals.config on full page loads,
+ * from the (cached) settings otherwise) → for guests on API v3 routes, where autoLocale runs
+ * before the user is known, the browser language when "auto-detect language" is on → the forum
+ * default.
  *
  * @param {import('express').Request} req
  * @param {import('express').Response} [res]
@@ -138,8 +171,26 @@ async function viewerLang(req, res) {
 	if (isLangCode(query)) return query;
 	const localConfig = res && res.locals && res.locals.config;
 	if (localConfig && isLangCode(localConfig.userLang)) return localConfig.userLang;
-	return getLang(req && req.uid);
+	const uid = req && req.uid;
+	if (!isLocalUid(uid) && req && typeof req.acceptsLanguages === 'function' && meta.config.autoDetectLang) {
+		const codes = await installedLangs();
+		const detected = codes.length ? req.acceptsLanguages(codes) : false;
+		if (isLangCode(detected)) return detected;
+	}
+	return getLang(uid);
 }
+
+/**
+ * Drops the cached language of a user who saved their settings.
+ *
+ * Hook: action:user.saveSettings
+ *
+ * @param {{uid: number}} data
+ * @returns {Promise<void>}
+ */
+plugin.onUserSaveSettings = async function (data) {
+	if (data && data.uid !== undefined) langCache.delete(String(data.uid));
+};
 
 // ---------------------------------------------------------------- rendering
 
@@ -207,9 +258,27 @@ async function relocalize(config, obj, lang) {
 }
 
 /**
+ * Rendered icons of topics, aligned with `tids`, in one database call.
+ *
+ * @param {object} config
+ * @param {number[]} tids clean topic ids
+ * @param {string} lang
+ * @returns {Promise<Array<object|null>>}
+ */
+async function renderTopics(config, tids, lang) {
+	if (!tids.length) return [];
+	const data = await db.getObjectsFields(tids.map(tid => `topic:${tid}`), ['cid', TOPIC_FIELD]);
+	return Promise.all(data.map(t => (t && t.cid ? renderTopicIcon(config, t[TOPIC_FIELD], t.cid, lang) : null)));
+}
+
+/**
  * Icons for many topics at once, for other plugins and themes (e.g. a "recent topics" widget):
  * `require.main.require('nodebb-plugin-topic-icons').getTopicIcons(tids, { lang: 'pl' })`.
- * One database call for all topics (db.getObjectsFields). Not bound to a hook.
+ * One database call for all topics (db.getObjectsFields). Not bound to a hook and without
+ * privilege checks: pass only topics the viewer may see.
+ *
+ * At most MAX_TIDS topics per call; invalid ids and entries past the limit get null. `lang`
+ * must be an installed language, otherwise the forum default is used.
  *
  * @param {Array<number|string>} tids
  * @param {{lang?: string}} [opts]
@@ -219,52 +288,42 @@ plugin.getTopicIcons = async function (tids, opts) {
 	opts = opts || {};
 	if (!Array.isArray(tids) || !tids.length) return [];
 	const config = await getConfig();
-	const lang = pickLang({ query: opts.lang, defaultLang: meta.config.defaultLang });
-	const data = await db.getObjectsFields(tids.map(tid => `topic:${tid}`), ['cid', TOPIC_FIELD]);
-	return Promise.all(data.map(t => (t && t.cid ? renderTopicIcon(config, t[TOPIC_FIELD], t.cid, lang) : null)));
+	const wanted = isLangCode(opts.lang) && (await installedLangs()).includes(opts.lang) ? opts.lang : undefined;
+	const lang = pickLang({ query: wanted, defaultLang: meta.config.defaultLang });
+	const clean = tids.map((tid, i) => (i < MAX_TIDS ? icons.cleanCid(tid) : 0));
+	const valid = clean.filter(Boolean);
+	const rendered = await renderTopics(config, valid, lang);
+	let next = 0;
+	return clean.map((tid) => {
+		if (!tid) return null;
+		const out = rendered[next];
+		next += 1;
+		return out || null;
+	});
 };
 
 // ---------------------------------------------------------------- permissions
 
-/**
- * Whether the user may pick an icon in a category, according to "Who can choose an icon".
- * Administrators and moderators of the category always may.
- *
- * @param {object} config normalised config
- * @param {number|string} uid
- * @param {number|string} cid
- * @returns {Promise<boolean>}
- */
-async function canChoose(config, uid, cid) {
-	if (config.chooser === 'all') return true;
-	if (!isLocalUid(uid)) return false;
-	if (await privileges.categories.isAdminOrMod(cid, uid)) return true;
-	if (config.chooser === 'group' && config.chooserGroup) return groups.isMember(uid, config.chooserGroup);
-	return false;
-}
+/** Access checks used by lib/rules.js. */
+const access = {
+	isAdminOrMod: (cid, uid) => privileges.categories.isAdminOrMod(cid, uid),
+	isMember: (uid, groupName) => groups.isMember(uid, groupName),
+};
 
 /**
- * Validates an icon picked by a user for a topic in a category. Throws an error with a
- * translation token that the composer shows as is.
- *
  * @param {object} config normalised config
  * @param {number|string} uid
  * @param {number|string} cid
- * @param {*} value icon id from the request
- * @returns {Promise<string>} the clean icon id
+ * @returns {Promise<boolean>} see lib/rules.js canChoose
  */
-async function checkChoice(config, uid, cid, value) {
-	const icon = icons.findIcon(config, typeof value === 'string' ? value : '');
-	if (!icon || !icon.active) throw new Error(`[[${icons.NAMESPACE}:error.unknown-icon]]`);
-	if (!icons.isOffered(icon, cid)) throw new Error(`[[${icons.NAMESPACE}:error.not-in-category]]`);
-	if (!(await canChoose(config, uid, cid))) throw new Error(`[[${icons.NAMESPACE}:error.no-privileges]]`);
-	return icon.id;
+function canChoose(config, uid, cid) {
+	return rules.canChoose(config, uid, cid, access);
 }
 
 /*
- * Icon ids validated in filter:topic.post / filter:post.edit, keyed by the payload object that
- * NodeBB passes on to filter:topic.create / filter:topic.edit. A WeakMap, so nothing leaks when
- * a request fails in between.
+ * Icon changes validated in filter:topic.post / filter:post.edit, keyed by the payload object
+ * that NodeBB passes on to filter:topic.create / filter:topic.edit. A WeakMap, so nothing leaks
+ * when a request fails in between.
  */
 const validated = new WeakMap();
 
@@ -274,6 +333,17 @@ const validated = new WeakMap();
  */
 function hasChoice(data) {
 	return !!data && data[PAYLOAD_FIELD] !== undefined && data[PAYLOAD_FIELD] !== null;
+}
+
+/**
+ * Sorted set of the topics that use an icon (score: time), so that removing the icon from the
+ * library can clear it from those topics without scanning all topics.
+ *
+ * @param {string} id clean icon id
+ * @returns {string}
+ */
+function indexKey(id) {
+	return `${SETTINGS_KEY}:icon:${id}:tids`;
 }
 
 // ---------------------------------------------------------------- hooks
@@ -291,16 +361,25 @@ plugin.init = async function ({ router }) {
 	// setupAdminPageRoute adds NodeBB's admin middleware, so only administrators reach this page.
 	routeHelpers.setupAdminPageRoute(router, '/admin/plugins/topic-icons', [], async (req, res) => {
 		const cids = await categories.getAllCidsFromSet('categories:cid');
-		const cats = (await categories.getCategoriesFields(cids, ['cid', 'name', 'parentCid', 'disabled']))
+		const cats = (await categories.getCategoriesFields(cids, ['cid', 'name', 'parentCid', 'order', 'disabled']))
 			.filter(c => c && parseInt(c.cid, 10) > 0);
 		const groupNames = (await groups.getNonPrivilegeGroups('groups:createtime', 0, -1, { ephemeral: false }))
-			.map(g => g.name);
+			.map(g => g && g.name)
+			.filter(name => name && !icons.EXCLUDED_GROUPS.includes(name));
 		res.render('admin/plugins/topic-icons', {
 			title: `[[${icons.ACP_NAMESPACE}:title]]`,
 			defaults: icons.defaults(),
-			categoryList: cats.map(c => ({ cid: c.cid, name: c.name, disabled: !!c.disabled })),
+			// Tree order with depth; names as plain text (public/admin.js escapes them).
+			categoryList: icons.categoryTree(cats).map(c => ({
+				cid: c.cid,
+				name: utils.decodeHTMLEntities(String(c.name || '')),
+				depth: c.depth,
+				disabled: !!c.disabled,
+			})),
 			groupList: groupNames,
 			maxUploadKb: Math.floor(upload.MAX_BYTES / 1024),
+			// The page is open to admin:settings, uploads to administrators only.
+			canUpload: await user.isAdministrator(req.uid),
 		});
 	});
 
@@ -336,25 +415,60 @@ plugin._uploadIcon = async function (req, res) {
 		const arg = key === 'upload-size' ? `, ${Math.floor(upload.MAX_BYTES / 1024)}` : '';
 		res.status(status).json({ error: `[[${icons.ACP_NAMESPACE}:${key}${arg}]]` });
 	};
-	if (!(await user.isAdministrator(req.uid))) return fail(403, 'upload-forbidden');
 	const f = req.file;
-	if (!f || !f.path) return fail(400, 'upload-missing');
-	if (f.size > upload.MAX_BYTES) return fail(400, 'upload-size');
-	const content = await fs.promises.readFile(f.path);
-	const result = upload.checkUpload(f, content);
-	if (result.error) return fail(400, result.error);
-	if (result.ext === 'svg' && !upload.isSafeSvg(content.toString('utf8'))) return fail(400, 'upload-svg-unsafe');
-	const name = upload.uniqueName(result.ext, crypto.randomBytes(8).toString('hex'));
-	const stored = await file.saveFileToLocal(name, UPLOAD_FOLDER, f.path);
-	res.json({ url: stored.url });
+	try {
+		if (!(await user.isAdministrator(req.uid))) return fail(403, 'upload-forbidden');
+		if (!f || !f.path) return fail(400, 'upload-missing');
+		if (f.size > upload.MAX_BYTES) return fail(400, 'upload-size');
+		const content = await fs.promises.readFile(f.path);
+		const result = upload.checkUpload(f, content);
+		if (result.error) return fail(400, result.error);
+		if (result.ext === 'svg' && !upload.isSafeSvg(content.toString('utf8'))) return fail(400, 'upload-svg-unsafe');
+		const name = upload.uniqueName(result.ext, crypto.randomBytes(8).toString('hex'));
+		const stored = await file.saveFileToLocal(name, UPLOAD_FOLDER, f.path);
+		res.json({ url: stored.url });
+	} finally {
+		// Newer NodeBB versions delete multer's temporary file themselves; doing it here as well
+		// keeps refused uploads from piling up in the temporary folder on any version.
+		if (f && f.path) fs.promises.unlink(f.path).catch(() => {});
+	}
 };
 
 /**
- * What the composer's picker needs, at
- * GET /api/v3/plugins/topic-icons/choices?cid=<cid> (new topic) or ?tid=<tid> (editing the first
- * post). Icons offered in the category, the category default and, when editing, the current
- * icon; `canChoose` is false when the viewer may not pick (the picker is then not shown).
- * Names are plain text in the viewer's language; URLs include relative_path.
+ * Topic whose icon the picker edits, from ?pid= (the post being edited; composer-default does not
+ * give the composer a tid when editing) or ?tid=. The post must be the first post of the topic.
+ *
+ * @param {object} query req.query
+ * @returns {Promise<{tid: number, topic: object}|null>} null when there is no such topic
+ */
+async function topicForPicker(query) {
+	let tid = icons.cleanCid(query.tid);
+	const pid = icons.cleanCid(query.pid);
+	if (pid) {
+		const postTid = icons.cleanCid(await posts.getPostField(pid, 'tid'));
+		if (!postTid || (tid && tid !== postTid)) return null;
+		tid = postTid;
+	}
+	if (!tid) return null;
+	const topic = await topics.getTopicFields(tid, ['cid', 'uid', 'mainPid', TOPIC_FIELD]);
+	if (!topic || !icons.cleanCid(topic.cid)) return null;
+	if (pid && String(topic.mainPid) !== String(pid)) return null;
+	return { tid, topic };
+}
+
+/**
+ * Routes under /api/v3/plugins (NodeBB's API v3 conventions and middleware):
+ *
+ * GET /topic-icons/choices?cid=<cid> (new topic), ?pid=<pid> or ?tid=<tid> (editing the first
+ * post): what the composer's picker needs. Icons offered in the category, the category default
+ * and, when editing, the current icon (`currentIcon` when it is no longer offered, so the picker
+ * can show it as unavailable) and the author's display name for the preview. `canChoose` is
+ * false when the viewer may not pick (the picker is then not shown). Names are plain text in the
+ * viewer's language; URLs include relative_path.
+ *
+ * GET /topic-icons/icons?tids=1,2,3: rendered icons of up to MAX_RELOCALIZE readable topics in
+ * the viewer's language, for topic lists that came from a route without the viewer's language
+ * (infinite scroll of guests, see public/client.js).
  *
  * Hook: static:api.routes
  *
@@ -364,27 +478,35 @@ plugin._uploadIcon = async function (req, res) {
 plugin.addApiRoutes = async function ({ router }) {
 	routeHelpers.setupApiRoute(router, 'get', '/topic-icons/choices', [], async (req, res) => {
 		const config = await getConfig();
-		const lang = await viewerLang(req);
 		const uid = req.uid;
-		let cid = icons.cleanCid(req.query.cid);
+		let cid;
 		let current = '';
+		let author = '';
 		let allowed;
 
-		const tid = icons.cleanCid(req.query.tid);
-		if (tid) {
-			const topic = await topics.getTopicFields(tid, ['cid', 'uid', TOPIC_FIELD]);
-			if (!topic || !topic.cid || !(await privileges.topics.can('topics:read', tid, uid))) {
+		if (req.query.pid !== undefined || req.query.tid !== undefined) {
+			const found = await topicForPicker(req.query);
+			if (!found || !(await privileges.topics.canRead(found.tid, uid))) {
 				return controllerHelpers.formatApiResponse(404, res);
 			}
-			cid = topic.cid;
+			const { topic } = found;
+			cid = icons.cleanCid(topic.cid);
 			current = icons.cleanId(topic[TOPIC_FIELD]);
 			allowed = isLocalUid(uid) && (String(topic.uid) === String(uid) || await privileges.categories.isAdminOrMod(cid, uid));
+			if (isLocalUid(topic.uid)) {
+				const u = await user.getUserFields(topic.uid, ['username', 'displayname']);
+				author = utils.decodeHTMLEntities(String((u && (u.displayname || u.username)) || ''));
+			}
 		} else {
+			cid = icons.cleanCid(req.query.cid);
 			if (!cid) return controllerHelpers.formatApiResponse(400, res);
-			allowed = await privileges.categories.can('topics:create', cid, uid);
+			const [canRead, canCreate] = await privileges.categories.can(['topics:read', 'topics:create'], cid, uid);
+			if (!canRead) return controllerHelpers.formatApiResponse(404, res);
+			allowed = canCreate;
 		}
 		allowed = allowed && await canChoose(config, uid, cid);
 
+		const lang = await viewerLang(req);
 		const describe = async icon => ({
 			id: icon.id,
 			name: await iconName(icon, lang),
@@ -398,16 +520,42 @@ plugin.addApiRoutes = async function ({ router }) {
 			cid,
 			current: currentIcon ? currentIcon.id : '',
 			icons: await Promise.all(list.map(describe)),
-			// Shown in the picker when editing a topic whose icon is no longer offered.
+			// The current icon when it is no longer offered here: shown as unavailable.
 			currentIcon: currentIcon && !list.includes(currentIcon) ? await describe(currentIcon) : null,
 			defaultIcon: fallback ? await describe(fallback) : null,
+			author,
 		});
 	});
+
+	routeHelpers.setupApiRoute(router, 'get', '/topic-icons/icons', [], async (req, res) => {
+		const raw = String(req.query.tids || '').split(',').slice(0, MAX_RELOCALIZE);
+		const tids = raw.map(icons.cleanCid).filter(Boolean);
+		if (!tids.length) return controllerHelpers.formatApiResponse(400, res);
+		const config = await getConfig();
+		if (!config.showInList || !config.icons.length) return controllerHelpers.formatApiResponse(200, res, { icons: {} });
+		const readable = await privileges.topics.filterTids('topics:read', tids, req.uid);
+		const rendered = await renderTopics(config, readable, await viewerLang(req));
+		const out = {};
+		readable.forEach((tid, i) => {
+			if (rendered[i]) out[tid] = rendered[i];
+		});
+		controllerHelpers.formatApiResponse(200, res, { icons: out });
+	});
 };
+
+/*
+ * Clean-up planned by onSettingsSave and carried out by onSettingsSet once the settings are
+ * stored: icons removed from the library and uploaded files no icon uses any more. Both hooks
+ * run in the process that saves, one right after the other (meta.settings.set).
+ */
+let pendingCleanup = null;
 
 /**
  * Validates the plugin settings before they are stored; a bad library is refused with an error
  * shown in the ACP instead of being saved. The ACP runs the same checks before sending.
+ *
+ * A partial save (meta.settings.setOne, or a script sending only some keys) is merged with the
+ * stored settings first, so it neither fails nor resets the other keys.
  *
  * Hook: filter:settings.set
  *
@@ -416,15 +564,52 @@ plugin.addApiRoutes = async function ({ router }) {
  */
 plugin.onSettingsSave = async function (data) {
 	if (!data || data.plugin !== SETTINGS_KEY) return data;
-	const { errors, settings } = icons.validateSettings(data.settings);
+	const stored = (await meta.settings.get(SETTINGS_KEY)) || {};
+	const merged = Object.assign({}, icons.defaults(), stored, data.settings || {});
+	const chooserGroup = icons.cleanText(merged.chooserGroup, 120);
+	const groupExists = merged.chooser === 'group' && chooserGroup ? !!(await groups.exists(chooserGroup)) : undefined;
+	const { errors, settings } = icons.validateSettings(merged, { groupExists });
 	if (errors.length) throw new Error(errors[0]);
+	const before = icons.normalize(stored).icons;
+	const after = icons.normalize(settings).icons;
+	pendingCleanup = icons.libraryChanges(before, after);
 	data.settings = settings;
 	return data;
 };
 
 /**
+ * Takes icons removed from the library off their topics (through the per-icon index, in
+ * batches), so that an icon added again later under the same id does not come back on old
+ * topics, and deletes uploaded files no icon uses any more.
+ *
+ * @param {{ids: string[], files: string[]}} changes see lib/icons.js libraryChanges
+ * @returns {Promise<void>}
+ */
+async function cleanUp(changes) {
+	for (const id of changes.ids) {
+		const key = indexKey(id);
+		await batch.processSortedSet(key, async (tids) => {
+			const data = await db.getObjectsFields(tids.map(tid => `topic:${tid}`), [TOPIC_FIELD]);
+			const stale = tids.filter((tid, i) => data[i] && data[i][TOPIC_FIELD] === id);
+			await Promise.all(stale.map(tid => topics.deleteTopicField(tid, TOPIC_FIELD)));
+		}, { batch: 500 });
+		await db.delete(key);
+	}
+	const folder = path.join(nconf.get('upload_path'), UPLOAD_FOLDER);
+	await Promise.all(changes.files.map(async (name) => {
+		const target = path.join(folder, name);
+		if (path.dirname(target) !== folder) return;
+		try {
+			await fs.promises.unlink(target);
+		} catch (err) {
+			if (err.code !== 'ENOENT') winston.warn(`[topic-icons] Cannot delete ${name}: ${err.message}`);
+		}
+	}));
+}
+
+/**
  * Drops the caches when this plugin's settings are saved in this process (other processes are
- * notified through pubsub, see plugin.init).
+ * notified through pubsub, see plugin.init) and runs the clean-up planned in onSettingsSave.
  *
  * Hook: action:settings.set
  *
@@ -432,7 +617,17 @@ plugin.onSettingsSave = async function (data) {
  * @returns {Promise<void>}
  */
 plugin.onSettingsSet = async function ({ plugin: hash }) {
-	if (hash === SETTINGS_KEY) invalidate();
+	if (hash !== SETTINGS_KEY) return;
+	invalidate();
+	const changes = pendingCleanup;
+	pendingCleanup = null;
+	if (changes && (changes.ids.length || changes.files.length)) {
+		try {
+			await cleanUp(changes);
+		} catch (err) {
+			winston.error(`[topic-icons] Clean-up after saving the library failed: ${err.stack || err.message}`);
+		}
+	}
 };
 
 /**
@@ -449,8 +644,13 @@ plugin.addAdminNavigation = async function (header) {
 };
 
 /**
- * New topic (also a queued topic being approved, which comes back here with fromQueue): checks
- * the picked icon for the author and the category. An empty value means "no icon".
+ * New topic: checks the picked icon for the author and the category, after the author's right
+ * to post there (so that the answer does not tell which icons a hidden category has). An empty
+ * value means "no icon".
+ *
+ * A queued topic being approved comes back here with `fromQueue`: its icon was checked when it
+ * was queued (onQueueSave); if it is no longer valid, the topic is posted without it rather than
+ * blocking the approval.
  *
  * Hook: filter:topic.post
  *
@@ -459,13 +659,41 @@ plugin.addAdminNavigation = async function (header) {
  */
 plugin.onTopicPost = async function (data) {
 	if (!hasChoice(data)) return data;
+	const config = await getConfig();
+	if (data.fromQueue) {
+		const { id, dropped } = await rules.settleQueued(config, data, access);
+		if (dropped) winston.warn(`[topic-icons] Queued topic by uid ${data.uid}: icon "${String(data[PAYLOAD_FIELD]).slice(0, 40)}" dropped (${dropped})`);
+		if (id) validated.set(data, id);
+		else delete data[PAYLOAD_FIELD];
+		return data;
+	}
 	if (data[PAYLOAD_FIELD] === '') {
 		delete data[PAYLOAD_FIELD];
 		return data;
 	}
-	const config = await getConfig();
-	validated.set(data, await checkChoice(config, data.uid, data.cid, data[PAYLOAD_FIELD]));
+	if (!(await privileges.categories.can('topics:create', data.cid, data.uid))) throw new Error('[[error:no-privileges]]');
+	const id = await rules.checkNewTopic(config, data, access);
+	if (id) validated.set(data, id);
+	else delete data[PAYLOAD_FIELD];
 	return data;
+};
+
+/**
+ * A topic about to be put in the post queue: its icon gets the same checks as on posting, so the
+ * author learns about a refused icon now and not the moderator on approval.
+ *
+ * Hook: filter:post-queue.save
+ *
+ * @param {{type: string, data: object}} payload
+ * @returns {Promise<object>}
+ */
+plugin.onQueueSave = async function (payload) {
+	const data = payload && payload.data;
+	if (!payload || payload.type !== 'topic' || !hasChoice(data)) return payload;
+	const id = await rules.checkNewTopic(await getConfig(), data, access);
+	if (id) data[PAYLOAD_FIELD] = id;
+	else delete data[PAYLOAD_FIELD];
+	return payload;
 };
 
 /**
@@ -481,16 +709,30 @@ plugin.onTopicCreate = async function (hookData) {
 	const { topic, data } = hookData;
 	if (!hasChoice(data) || data[PAYLOAD_FIELD] === '') return hookData;
 	let id = validated.get(data);
-	if (!id) id = await checkChoice(await getConfig(), data.uid, data.cid, data[PAYLOAD_FIELD]);
-	topic[TOPIC_FIELD] = id;
+	if (!id) id = await rules.checkNewTopic(await getConfig(), data, access);
+	if (id) topic[TOPIC_FIELD] = id;
 	return hookData;
 };
 
 /**
- * Edit of a post: when it is the first post of a topic and the payload carries an icon, only
- * the topic author or a moderator of the category may change it, and a new icon must pass the
- * same checks as on posting. Runs before anything is written, so a refused icon leaves the
- * post unchanged. Replies ignore the field.
+ * Adds a new topic with an icon to the index of its icon.
+ *
+ * Hook: action:topic.save
+ *
+ * @param {{topic: object}} hookData
+ * @returns {Promise<void>}
+ */
+plugin.onTopicSave = async function ({ topic }) {
+	const id = topic && icons.cleanId(topic[TOPIC_FIELD]);
+	if (id) await db.sortedSetAdd(indexKey(id), topic.timestamp || Date.now(), topic.tid);
+};
+
+/**
+ * Edit of a post: when it is the first post of a topic and the payload carries an icon, applies
+ * the rules of lib/rules.js planEdit (the current icon sent again is no change; otherwise only the
+ * topic author or a moderator, and the value must pass the same checks as on posting). Runs
+ * before anything is written, so a refused icon leaves the post unchanged. Replies ignore the
+ * field.
  *
  * Hook: filter:post.edit
  *
@@ -501,21 +743,22 @@ plugin.onPostEdit = async function (hookData) {
 	const { data } = hookData;
 	if (!hasChoice(data)) return hookData;
 	const tid = await posts.getPostField(data.pid, 'tid');
-	const topic = await topics.getTopicFields(tid, ['cid', 'uid', 'mainPid']);
+	const topic = await topics.getTopicFields(tid, ['cid', 'uid', 'mainPid', TOPIC_FIELD]);
 	if (!topic || String(topic.mainPid) !== String(data.pid)) return hookData;
-	const uid = hookData.uid;
-	const isOwner = isLocalUid(uid) && String(topic.uid) === String(uid);
-	if (!isOwner && !(await privileges.categories.isAdminOrMod(topic.cid, uid))) {
-		throw new Error(`[[${icons.NAMESPACE}:error.no-privileges]]`);
-	}
-	const value = data[PAYLOAD_FIELD] === '' ? '' : await checkChoice(await getConfig(), uid, topic.cid, data[PAYLOAD_FIELD]);
-	validated.set(data, value);
+	const plan = await rules.planEdit({
+		config: await getConfig(),
+		topic: { cid: topic.cid, uid: topic.uid, iconId: topic[TOPIC_FIELD] },
+		uid: hookData.uid,
+		value: data[PAYLOAD_FIELD],
+		access,
+	});
+	if (plan.change) validated.set(data, { tid, id: plan.id, previous: icons.cleanId(topic[TOPIC_FIELD]) });
 	return hookData;
 };
 
 /**
  * Writes the icon checked in onPostEdit into the topic ('' removes it; the category default is
- * then shown).
+ * then shown) and moves the topic between icon indexes.
  *
  * Hook: filter:topic.edit
  *
@@ -523,14 +766,50 @@ plugin.onPostEdit = async function (hookData) {
  * @returns {Promise<object>}
  */
 plugin.onTopicEdit = async function (hookData) {
-	if (hookData && validated.has(hookData.data)) hookData.topic[TOPIC_FIELD] = validated.get(hookData.data);
+	const change = hookData && validated.get(hookData.data);
+	if (!change) return hookData;
+	hookData.topic[TOPIC_FIELD] = change.id;
+	if (change.previous) await db.sortedSetRemove(indexKey(change.previous), change.tid);
+	if (change.id) await db.sortedSetAdd(indexKey(change.id), Date.now(), change.tid);
 	return hookData;
 };
 
 /**
- * Lists of topics (category, recent, unread, popular, tags, search and their API routes):
- * attaches `topicIcon` { id, name, url, isDefault, html }. The icon id is part of the topic
- * object NodeBB has just loaded, so this costs no database call.
+ * A topic moved to a category where its icon is not available loses the icon; the default of
+ * the new category is shown instead (lib/rules.js clearOnMove).
+ *
+ * Hook: action:topic.move
+ *
+ * @param {{tid: number, toCid: number}} data
+ * @returns {Promise<void>}
+ */
+plugin.onTopicMove = async function (data) {
+	if (!data || !data.tid) return;
+	const iconId = await topics.getTopicField(data.tid, TOPIC_FIELD);
+	if (!rules.clearOnMove(await getConfig(), iconId, data.toCid)) return;
+	await topics.deleteTopicField(data.tid, TOPIC_FIELD);
+	const id = icons.cleanId(iconId);
+	if (id) await db.sortedSetRemove(indexKey(id), data.tid);
+};
+
+/**
+ * Removes purged topics from the icon indexes.
+ *
+ * Hook: action:topics.purge
+ *
+ * @param {{topics: Array<object>}} data
+ * @returns {Promise<void>}
+ */
+plugin.onTopicsPurge = async function (data) {
+	const list = (data && Array.isArray(data.topics) ? data.topics : []).filter(t => t && icons.cleanId(t[TOPIC_FIELD]));
+	await Promise.all(list.map(t => db.sortedSetRemove(indexKey(icons.cleanId(t[TOPIC_FIELD])), t.tid)));
+};
+
+/**
+ * Lists of topics (category, recent, unread, popular, tags, user profile and their API routes;
+ * not search results, which are posts): attaches `topicIcon` { id, name, url, isDefault, html }.
+ * The icon id is part of the topic object NodeBB has just loaded, so this costs no topic query;
+ * the viewer's language comes from a short-lived cache (getLang).
  *
  * Hook: filter:topics.get
  *
@@ -588,4 +867,4 @@ plugin.onRender = async function (hookData) {
 };
 
 /** Internal functions exposed for tests only; not a public API. */
-plugin._test = { getConfig, invalidate, viewerLang, canChoose, checkChoice };
+plugin._test = { getConfig, invalidate, viewerLang, canChoose };
