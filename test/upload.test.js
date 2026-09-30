@@ -45,3 +45,11 @@ test('uniqueName never contains the original name and differs per upload', () =>
 	assert.equal(U.uniqueName('svg', '../../x'), U.uniqueName('svg', '../../x').replace(/[^a-z0-9.-]/g, ''));
 	assert.notEqual(U.uniqueName('png', 'aa'), U.uniqueName('png', 'bb'));
 });
+
+test('isSafeSvg refuses external resources in styles, keeps local url(#id)', () => {
+	['<svg><style>@import url(https://x/a.css);</style></svg>', '<svg><style>@IMPORT "a.css";</style></svg>',
+		'<svg><rect style="fill:url(https://x/p.svg#a)"/></svg>', '<svg><rect style="fill: url( \'//x/a\' )"/></svg>',
+		'<svg><style>rect{background:URL(data:image/png;base64,AA)}</style></svg>'].forEach(s => assert.equal(U.isSafeSvg(s), false, s));
+	['<svg><rect fill="url(#g)"/></svg>', '<svg><rect style="fill: url( \'#g\' )"/></svg>', '<svg><rect style="fill:url(&quot;#g&quot;)"/></svg>']
+		.forEach(s => assert.equal(U.isSafeSvg(s), true, s));
+});
