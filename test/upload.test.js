@@ -26,7 +26,7 @@ test('sniffType recognises PNG, WebP and SVG by content', () => {
 test('isSafeSvg refuses scripts, handlers and external links', () => {
 	assert.equal(U.isSafeSvg(SVG.toString()), true);
 	['<svg><script>alert(1)</script></svg>', '<svg onload="x()">', '<svg><a href="https://x">', '<svg><image xlink:href="http://x/a.png"/>',
-		'<svg><foreignObject>', '<svg><a href="javascript:x">', '<!ENTITY x "y"><svg>', '<svg><use href=//evil/x.svg#a>'].forEach(s => assert.equal(U.isSafeSvg(s), false, s));
+		'<svg><foreignObject>', '<svg><a href="javascript:x">', '<!ENTITY x "y"><svg>', '<svg><use href=//evil/x.svg#a>', '<svg/onload="x()">'].forEach(s => assert.equal(U.isSafeSvg(s), false, s));
 });
 
 test('checkUpload: extension, MIME type and content must agree; size limit', () => {

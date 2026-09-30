@@ -41,12 +41,12 @@ define('admin/plugins/topic-icons', ['settings', 'alerts', 'translator', 'bootbo
 	}
 
 	/**
-	 * @param {string} text translated (HTML-escaped) text
-	 * @returns {string} plain text; a string operation, nothing is parsed as HTML
+	 * Escapes text for element content and double-quoted attributes. Square brackets are encoded
+	 * too, so that no stored text can become a translation token when the markup is translated.
 	 */
-	function plain(text) {
-		return I.decodeEntities(text);
-	}
+	const esc = I.escape;
+	/** Translated (HTML-escaped) text → plain text; a string operation, nothing is parsed as HTML. */
+	const plain = I.decodeEntities;
 
 	/**
 	 * @param {string} text markup with translation tokens
@@ -77,17 +77,6 @@ define('admin/plugins/topic-icons', ['settings', 'alerts', 'translator', 'bootbo
 	}
 
 	/**
-	 * Escapes text for element content and double-quoted attributes. Square brackets are encoded
-	 * too, so that no stored text can become a translation token when the markup is translated.
-	 *
-	 * @param {*} str
-	 * @returns {string}
-	 */
-	function esc(str) {
-		return I.escape(str == null ? '' : str);
-	}
-
-	/**
 	 * Translated message with an optional admin-typed argument, escaped and inserted after
 	 * translation, so it is never read as a translation token.
 	 *
@@ -99,20 +88,6 @@ define('admin/plugins/topic-icons', ['settings', 'alerts', 'translator', 'bootbo
 		return translator.translate(arg === undefined ? tx(key) : tx(key, ARG)).then(function (html) {
 			return arg === undefined ? html : html.split(ARG).join(esc(arg));
 		});
-	}
-
-	/**
-	 * @param {string} value JSON from a hidden input
-	 * @param {*} fallback returned for empty or invalid JSON
-	 * @returns {*}
-	 */
-	function parse(value, fallback) {
-		if (!value) return fallback;
-		try {
-			return JSON.parse(value);
-		} catch {
-			return fallback;
-		}
 	}
 
 	/**
@@ -144,8 +119,8 @@ define('admin/plugins/topic-icons', ['settings', 'alerts', 'translator', 'bootbo
 	}
 
 	/**
-	 * @param {number} i row index
 	 * @param {object} icon
+	 * @param {number} i row index
 	 * @returns {string} HTML of one library row
 	 */
 	function rowHtml(icon, i) {
@@ -440,15 +415,18 @@ define('admin/plugins/topic-icons', ['settings', 'alerts', 'translator', 'bootbo
 				// Unset switches default to on, as on the server (lib/icons.js normalize).
 				$('#ti-showInList, #ti-showInTopic').prop('checked', true);
 			}
-			library = I.normalize({ icons: $('#ti-icons-json').val() || d.icons }).icons;
-			catDefaults = parse($('#ti-cat-json').val(), {}) || {};
+			// Same clean-up as on the server: invalid entries and defaults of unknown icons are dropped.
+			const stored = I.normalize({ icons: $('#ti-icons-json').val() || d.icons, categoryDefaults: $('#ti-cat-json').val() });
+			library = stored.icons;
+			catDefaults = stored.categoryDefaults;
 			const group = $('#ti-group').val() || '';
 			if (group && !groupListed(group)) {
-				// The stored group was deleted or renamed: keep it visible, marked, so that the
-				// validation explains what to fix.
+				// The stored group was deleted or renamed: keep it selected, marked, so that the
+				// validation explains what to fix. The option is added now (the mark follows after
+				// translation), otherwise the select would lose the value before render() reads it.
+				const option = $('<option>').val(group).text(group).appendTo('#ti-chooser-group');
 				translate(tx('group-missing')).then(function (suffix) {
-					$('#ti-chooser-group').append('<option value="' + esc(group) + '">' + esc(group) + ' ' + suffix + '</option>').val(group);
-					renderChecks();
+					option.text(group + ' ' + plain(suffix));
 				});
 			}
 			$('#ti-chooser-group').val(group);

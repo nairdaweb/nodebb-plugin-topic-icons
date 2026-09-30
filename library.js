@@ -57,10 +57,11 @@ const { isLocalUid } = rules;
 const SETTINGS_KEY = 'topic-icons';
 /** Sub-folder of NodeBB's upload_path for icons uploaded from the ACP. */
 const UPLOAD_FOLDER = 'topic-icons';
-/** Topic field that holds the picked icon id. */
+/**
+ * Topic field that holds the picked icon id; the composer / API payload (topics.post and
+ * posts.edit) uses the same name, and lib/rules.js reads it as data.iconId.
+ */
 const TOPIC_FIELD = 'iconId';
-/** Name of the field in the composer / API payload (topics.post and posts.edit). */
-const PAYLOAD_FIELD = 'iconId';
 /** Most topics getTopicIcons() renders in one call. */
 const MAX_TIDS = 500;
 /** Most topics the /topic-icons/icons route renders in one request. */
@@ -93,22 +94,6 @@ const store = new ConfigStore(
 	async () => icons.normalize(await meta.settings.get(SETTINGS_KEY)),
 	() => htmlCache.clear()
 );
-
-/**
- * @returns {Promise<object>} normalised config, see lib/icons.js
- */
-function getConfig() {
-	return store.get();
-}
-
-/**
- * Drops the cached config and everything rendered from it.
- *
- * @returns {void}
- */
-function invalidate() {
-	store.invalidate();
-}
 
 // ---------------------------------------------------------------- language
 
@@ -213,7 +198,7 @@ async function iconName(icon, lang) {
  * The returned object is a copy; `_lang`, `_iconId` and `_cid` are non-enumerable (not sent to
  * the browser) and let relocalize() re-render it in another language.
  *
- * @param {object} config normalised config (from getConfig(), with its generation)
+ * @param {object} config normalised config (from store.get(), with its generation)
  * @param {string} iconId value of the topic field
  * @param {number|string} cid category of the topic
  * @param {string} lang
@@ -287,7 +272,7 @@ async function renderTopics(config, tids, lang) {
 plugin.getTopicIcons = async function (tids, opts) {
 	opts = opts || {};
 	if (!Array.isArray(tids) || !tids.length) return [];
-	const config = await getConfig();
+	const config = await store.get();
 	const wanted = isLangCode(opts.lang) && (await installedLangs()).includes(opts.lang) ? opts.lang : undefined;
 	const lang = pickLang({ query: wanted, defaultLang: meta.config.defaultLang });
 	const clean = tids.map((tid, i) => (i < MAX_TIDS ? icons.cleanCid(tid) : 0));
@@ -310,16 +295,6 @@ const access = {
 	isMember: (uid, groupName) => groups.isMember(uid, groupName),
 };
 
-/**
- * @param {object} config normalised config
- * @param {number|string} uid
- * @param {number|string} cid
- * @returns {Promise<boolean>} see lib/rules.js canChoose
- */
-function canChoose(config, uid, cid) {
-	return rules.canChoose(config, uid, cid, access);
-}
-
 /*
  * Icon changes validated in filter:topic.post / filter:post.edit, keyed by the payload object
  * that NodeBB passes on to filter:topic.create / filter:topic.edit. A WeakMap, so nothing leaks
@@ -332,7 +307,7 @@ const validated = new WeakMap();
  * @returns {boolean} whether the payload carries an icon choice ('' = remove the icon)
  */
 function hasChoice(data) {
-	return !!data && data[PAYLOAD_FIELD] !== undefined && data[PAYLOAD_FIELD] !== null;
+	return !!data && data[TOPIC_FIELD] !== undefined && data[TOPIC_FIELD] !== null;
 }
 
 /**
@@ -383,13 +358,14 @@ plugin.init = async function ({ router }) {
 		});
 	});
 
-	// Icon upload. Administrators only (checked again in the handler), with the CSRF token of the
-	// ACP session; type, content and size are checked by lib/upload.js, and the file is stored
-	// under a new unique name.
+	// Icon upload. Administrators only, checked before multer so that nobody else can write
+	// files to the temporary folder; with the CSRF token of the ACP session. Type, content and
+	// size are checked by lib/upload.js, and the file is stored under a new unique name.
 	router.post(
 		'/api/admin/plugins/topic-icons/upload',
 		middleware.ensureLoggedIn,
 		middleware.applyCSRF,
+		ensureAdmin,
 		uploadMiddleware.single('file'),
 		routeHelpers.tryRoute(plugin._uploadIcon, (err, res) => res.status(400).json({ error: err.message }))
 	);
@@ -400,30 +376,45 @@ plugin.init = async function ({ router }) {
 		winston.warn(`[topic-icons] Cannot create upload folder: ${err.message}`);
 	}
 
-	pubsub.on(`action:settings.set.${SETTINGS_KEY}`, invalidate);
+	pubsub.on(`action:settings.set.${SETTINGS_KEY}`, () => store.invalidate());
 };
 
 /**
- * Handler of POST /api/admin/plugins/topic-icons/upload (multipart, field "file").
+ * Refuses the upload route to everyone but administrators, before the body is read.
+ *
+ * @param {import('express').Request} req
+ * @param {import('express').Response} res
+ * @param {function} next
+ * @returns {void}
+ */
+function ensureAdmin(req, res, next) {
+	user.isAdministrator(req.uid).then((isAdmin) => {
+		if (isAdmin) return next();
+		res.status(403).json({ error: `[[${icons.ACP_NAMESPACE}:upload-forbidden]]` });
+	}, next);
+}
+
+/**
+ * Handler of POST /api/admin/plugins/topic-icons/upload (multipart, field "file"), behind
+ * ensureAdmin.
  *
  * @param {import('express').Request} req
  * @param {import('express').Response} res
  * @returns {Promise<void>} responds with { url } or { error } (a translation token)
  */
 plugin._uploadIcon = async function (req, res) {
-	const fail = (status, key) => {
+	const fail = (key) => {
 		const arg = key === 'upload-size' ? `, ${Math.floor(upload.MAX_BYTES / 1024)}` : '';
-		res.status(status).json({ error: `[[${icons.ACP_NAMESPACE}:${key}${arg}]]` });
+		res.status(400).json({ error: `[[${icons.ACP_NAMESPACE}:${key}${arg}]]` });
 	};
 	const f = req.file;
 	try {
-		if (!(await user.isAdministrator(req.uid))) return fail(403, 'upload-forbidden');
-		if (!f || !f.path) return fail(400, 'upload-missing');
-		if (f.size > upload.MAX_BYTES) return fail(400, 'upload-size');
+		if (!f || !f.path) return fail('upload-missing');
+		if (f.size > upload.MAX_BYTES) return fail('upload-size');
 		const content = await fs.promises.readFile(f.path);
 		const result = upload.checkUpload(f, content);
-		if (result.error) return fail(400, result.error);
-		if (result.ext === 'svg' && !upload.isSafeSvg(content.toString('utf8'))) return fail(400, 'upload-svg-unsafe');
+		if (result.error) return fail(result.error);
+		if (result.ext === 'svg' && !upload.isSafeSvg(content.toString('utf8'))) return fail('upload-svg-unsafe');
 		const name = upload.uniqueName(result.ext, crypto.randomBytes(8).toString('hex'));
 		const stored = await file.saveFileToLocal(name, UPLOAD_FOLDER, f.path);
 		res.json({ url: stored.url });
@@ -477,7 +468,7 @@ async function topicForPicker(query) {
  */
 plugin.addApiRoutes = async function ({ router }) {
 	routeHelpers.setupApiRoute(router, 'get', '/topic-icons/choices', [], async (req, res) => {
-		const config = await getConfig();
+		const config = await store.get();
 		const uid = req.uid;
 		let cid;
 		let current = '';
@@ -504,7 +495,7 @@ plugin.addApiRoutes = async function ({ router }) {
 			if (!canRead) return controllerHelpers.formatApiResponse(404, res);
 			allowed = canCreate;
 		}
-		allowed = allowed && await canChoose(config, uid, cid);
+		allowed = allowed && await rules.canChoose(config, uid, cid, access);
 
 		const lang = await viewerLang(req);
 		const describe = async icon => ({
@@ -531,7 +522,7 @@ plugin.addApiRoutes = async function ({ router }) {
 		const raw = String(req.query.tids || '').split(',').slice(0, MAX_RELOCALIZE);
 		const tids = raw.map(icons.cleanCid).filter(Boolean);
 		if (!tids.length) return controllerHelpers.formatApiResponse(400, res);
-		const config = await getConfig();
+		const config = await store.get();
 		if (!config.showInList || !config.icons.length) return controllerHelpers.formatApiResponse(200, res, { icons: {} });
 		const readable = await privileges.topics.filterTids('topics:read', tids, req.uid);
 		const rendered = await renderTopics(config, readable, await viewerLang(req));
@@ -618,7 +609,7 @@ async function cleanUp(changes) {
  */
 plugin.onSettingsSet = async function ({ plugin: hash }) {
 	if (hash !== SETTINGS_KEY) return;
-	invalidate();
+	store.invalidate();
 	const changes = pendingCleanup;
 	pendingCleanup = null;
 	if (changes && (changes.ids.length || changes.files.length)) {
@@ -659,22 +650,22 @@ plugin.addAdminNavigation = async function (header) {
  */
 plugin.onTopicPost = async function (data) {
 	if (!hasChoice(data)) return data;
-	const config = await getConfig();
+	const config = await store.get();
 	if (data.fromQueue) {
 		const { id, dropped } = await rules.settleQueued(config, data, access);
-		if (dropped) winston.warn(`[topic-icons] Queued topic by uid ${data.uid}: icon "${String(data[PAYLOAD_FIELD]).slice(0, 40)}" dropped (${dropped})`);
+		if (dropped) winston.warn(`[topic-icons] Queued topic by uid ${data.uid}: icon "${String(data[TOPIC_FIELD]).slice(0, 40)}" dropped (${dropped})`);
 		if (id) validated.set(data, id);
-		else delete data[PAYLOAD_FIELD];
+		else delete data[TOPIC_FIELD];
 		return data;
 	}
-	if (data[PAYLOAD_FIELD] === '') {
-		delete data[PAYLOAD_FIELD];
+	if (data[TOPIC_FIELD] === '') {
+		delete data[TOPIC_FIELD];
 		return data;
 	}
 	if (!(await privileges.categories.can('topics:create', data.cid, data.uid))) throw new Error('[[error:no-privileges]]');
 	const id = await rules.checkNewTopic(config, data, access);
 	if (id) validated.set(data, id);
-	else delete data[PAYLOAD_FIELD];
+	else delete data[TOPIC_FIELD];
 	return data;
 };
 
@@ -690,9 +681,9 @@ plugin.onTopicPost = async function (data) {
 plugin.onQueueSave = async function (payload) {
 	const data = payload && payload.data;
 	if (!payload || payload.type !== 'topic' || !hasChoice(data)) return payload;
-	const id = await rules.checkNewTopic(await getConfig(), data, access);
-	if (id) data[PAYLOAD_FIELD] = id;
-	else delete data[PAYLOAD_FIELD];
+	const id = await rules.checkNewTopic(await store.get(), data, access);
+	if (id) data[TOPIC_FIELD] = id;
+	else delete data[TOPIC_FIELD];
 	return payload;
 };
 
@@ -707,9 +698,9 @@ plugin.onQueueSave = async function (payload) {
  */
 plugin.onTopicCreate = async function (hookData) {
 	const { topic, data } = hookData;
-	if (!hasChoice(data) || data[PAYLOAD_FIELD] === '') return hookData;
+	if (!hasChoice(data) || data[TOPIC_FIELD] === '') return hookData;
 	let id = validated.get(data);
-	if (!id) id = await rules.checkNewTopic(await getConfig(), data, access);
+	if (!id) id = await rules.checkNewTopic(await store.get(), data, access);
 	if (id) topic[TOPIC_FIELD] = id;
 	return hookData;
 };
@@ -746,10 +737,10 @@ plugin.onPostEdit = async function (hookData) {
 	const topic = await topics.getTopicFields(tid, ['cid', 'uid', 'mainPid', TOPIC_FIELD]);
 	if (!topic || String(topic.mainPid) !== String(data.pid)) return hookData;
 	const plan = await rules.planEdit({
-		config: await getConfig(),
+		config: await store.get(),
 		topic: { cid: topic.cid, uid: topic.uid, iconId: topic[TOPIC_FIELD] },
 		uid: hookData.uid,
-		value: data[PAYLOAD_FIELD],
+		value: data[TOPIC_FIELD],
 		access,
 	});
 	if (plan.change) validated.set(data, { tid, id: plan.id, previous: icons.cleanId(topic[TOPIC_FIELD]) });
@@ -786,7 +777,7 @@ plugin.onTopicEdit = async function (hookData) {
 plugin.onTopicMove = async function (data) {
 	if (!data || !data.tid) return;
 	const iconId = await topics.getTopicField(data.tid, TOPIC_FIELD);
-	if (!rules.clearOnMove(await getConfig(), iconId, data.toCid)) return;
+	if (!rules.clearOnMove(await store.get(), iconId, data.toCid)) return;
 	await topics.deleteTopicField(data.tid, TOPIC_FIELD);
 	const id = icons.cleanId(iconId);
 	if (id) await db.sortedSetRemove(indexKey(id), data.tid);
@@ -819,7 +810,7 @@ plugin.onTopicsPurge = async function (data) {
 plugin.onTopicsGet = async function (hookData) {
 	const list = hookData && hookData.topics;
 	if (!Array.isArray(list) || !list.length) return hookData;
-	const config = await getConfig();
+	const config = await store.get();
 	if (!config.showInList || !config.icons.length) return hookData;
 	const lang = await getLang(hookData.uid);
 	await Promise.all(list.map(async (t) => {
@@ -839,7 +830,7 @@ plugin.onTopicsGet = async function (hookData) {
 plugin.onTopicGet = async function (hookData) {
 	const t = hookData && hookData.topic;
 	if (!t || !t.cid) return hookData;
-	const config = await getConfig();
+	const config = await store.get();
 	if (!config.showInTopic || !config.icons.length) return hookData;
 	t.topicIcon = await renderTopicIcon(config, t[TOPIC_FIELD], t.cid, await getLang(hookData.uid));
 	return hookData;
@@ -860,11 +851,8 @@ plugin.onRender = async function (hookData) {
 	const list = Array.isArray(templateData.topics) ? templateData.topics.filter(t => t && t.topicIcon) : [];
 	if (!list.length && !templateData.topicIcon) return hookData;
 	const lang = await viewerLang(req, res);
-	const config = await getConfig();
+	const config = await store.get();
 	await Promise.all(list.map(t => relocalize(config, t, lang)));
 	await relocalize(config, templateData, lang);
 	return hookData;
 };
-
-/** Internal functions exposed for tests only; not a public API. */
-plugin._test = { getConfig, invalidate, viewerLang, canChoose };

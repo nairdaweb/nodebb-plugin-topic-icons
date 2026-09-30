@@ -5,6 +5,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Security
+- The ACP upload route checks for an administrator before the file is received, so other users
+  can no longer have files written to the temporary folder.
+- SVG uploads with an event handler after `/` (`<svg/onload=…>`) are refused.
+
+### Fixed
+- ACP: a chooser group that no longer exists stays selected while the page loads, instead of
+  being briefly cleared; stored category defaults get the same clean-up as on the server.
+
 ### Planned
 - State overlays on the icon: pinned, locked and "solved" (the latter only when the `isSolved`
   field of nodebb-plugin-question-and-answer is present; no hard dependency).
