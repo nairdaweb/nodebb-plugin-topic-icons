@@ -4,7 +4,7 @@
   "description": "Topic icons for NodeBB 4: authors pick an icon from an admin-managed library in the composer; icons appear in topic lists and topic headers. Per-category icon sets and defaults, permissions, server-side validation; translated (en-GB, pl).",
   "main": "library.js",
   "license": "MIT",
-  "author": "nairda <nairda@wirelab.pl> (https://wirelab.pl)",
+  "author": "nairda (https://wirelab.pl)",
   "homepage": "https://github.com/nairdaweb/nodebb-plugin-topic-icons#readme",
   "repository": {
     "type": "git",
@@ -18,6 +18,7 @@
     "plugin",
     "nodebb-plugin",
     "topic",
+    "topic-icons",
     "icons",
     "composer",
     "categories"

@@ -1,13 +1,12 @@
 # nodebb-plugin-topic-icons
 
-Topic icons for **NodeBB 4.x**. When creating a topic, the author picks an icon from a library
-managed by the administrators; the icon is shown next to the topic in topic lists and in the topic
-header.
+[![npm](https://img.shields.io/npm/v/nodebb-plugin-topic-icons.svg)](https://www.npmjs.com/package/nodebb-plugin-topic-icons)
+[![NodeBB](https://img.shields.io/badge/NodeBB-4.15%2B-1e4fd8.svg)](https://nodebb.org)
+[![License: MIT](https://img.shields.io/badge/license-MIT-e89350.svg)](LICENSE)
 
+Topic icons for **NodeBB 4**: authors pick an icon from an admin-managed library in the composer, and
+the icon is shown next to the topic in topic lists and in the topic header.
 
-- **Compatibility:** NodeBB `^4.15.0` (the ACP page uses the `{{tx()}}` template helper that core
-  switched its admin templates to in 4.15), tested with NodeBB 4.16, nodebb-plugin-composer-default
-  11 and the Harmony theme; Node.js 22 or newer.
 - **Author:** [nairda](https://wirelab.pl) · **Licence:** MIT
 - **Source and issues:** [github.com/nairdaweb/nodebb-plugin-topic-icons](https://github.com/nairdaweb/nodebb-plugin-topic-icons)
 
@@ -17,7 +16,7 @@ header.
 
 ![Icon picker in the composer, with a preview of the topic row](https://raw.githubusercontent.com/nairdaweb/nodebb-plugin-topic-icons/main/docs/screenshot-picker.png)
 
-*Shown with a custom theme (nodebb-theme-wirelab) that puts the icon in place of the avatar; with Harmony the icon is shown in front of the title.*
+*Screenshots in Polish, with a custom theme that puts the icon in place of the avatar; with Harmony the icon is shown in front of the title.*
 
 ## Features
 
@@ -30,8 +29,8 @@ header.
   showcase, announcement, discussion.
 - **Per-category sets and defaults:** each icon can be limited to some categories; each category can
   have a default icon (plus one forum-wide default) for topics without one.
-- **Permissions:** everyone who can create topics, members of one group, or moderators only.
-  Users choose from the library only; they cannot upload images.
+- **Permissions:** everyone who can create topics, members of one group, or moderators only
+  (see [Privileges](#privileges)). Users choose from the library only; they cannot upload images.
 - **Server-side validation:** the icon must exist, be active, be available in the category and
   the user must be allowed to choose, also to remove it; only the topic author or a moderator can
   change it. Topics that go to the post queue are checked when they are submitted. Refused choices
@@ -49,7 +48,18 @@ header.
   (users' language settings are cached for a minute).
 - **Translated:** en-GB and pl (other languages fall back to en-GB).
 
+## Compatibility
+
+- NodeBB `^4.15.0` (the ACP page uses the `{{tx()}}` template helper that core switched its admin
+  templates to in 4.15), tested with NodeBB 4.16, nodebb-plugin-composer-default 11 and the Harmony
+  theme. NodeBB 4.14 and older are not supported.
+- Node.js 22 or newer.
+- The picker needs nodebb-plugin-composer-default (NodeBB's default composer).
+
 ## Installation
+
+Install and activate it in **ACP → Extend → Plugins** (search for *topic-icons*), or from the
+command line:
 
 ```sh
 cd /path/to/nodebb
@@ -59,12 +69,15 @@ npm install nodebb-plugin-topic-icons
 ./nodebb restart
 ```
 
-Then configure it in **ACP → Plugins → Topic icons**.
+Then configure it in **ACP → Plugins → Topic icons**. The eight built-in icons are available in
+every category right away.
 
 Uninstalling leaves the `iconId` field in topics, the `topic-icons:icon:<id>:tids` sorted sets
 and the `settings:topic-icons` hash in the database; they are not used by anything else.
 
 ## Configuration
+
+**ACP → Plugins → Topic icons**
 
 - *Who can choose an icon* — everyone who can create topics / members of a group (and moderators) /
   moderators and administrators only.
@@ -96,6 +109,18 @@ settings. The group for "members of a group" must exist and cannot be `guests`, 
   the picker does not send it. With "moderators only", an author cannot change or remove an icon.
 - **Fork and merge:** a topic created by forking or by merging under a new title starts without an
   icon (the category default is shown); merging into an existing topic keeps that topic's icon.
+
+## Privileges
+
+- **Choosing an icon** is controlled by the *Who can choose an icon* setting, on top of NodeBB's own
+  privileges (the user must be able to create the topic or edit its first post):
+  - *everyone who can create topics* (default);
+  - *members of a group* (plus moderators and administrators);
+  - *moderators and administrators only*.
+- Only the topic author (when allowed by the setting) or a moderator of the category can change or
+  remove a topic's icon.
+- **The ACP page** is open to administrators and to users with the `admin:settings` privilege;
+  **uploading images** is restricted to administrators.
 
 ## For theme authors
 
@@ -150,15 +175,38 @@ const icons = await topicIcons.getTopicIcons([1, 2, 3], { lang: 'pl' });
 - An https image from another site is loaded by every visitor's browser from that site, which
   sees their IP address (not the page, thanks to `no-referrer`). Upload images to keep them local.
 
+## Translations
+
+en-GB and pl are included; other languages fall back to en-GB. Strings live in
+`languages/<code>/topic-icons.json` (forum) and `languages/<code>/admin/plugins/topic-icons.json`
+(ACP); pull requests with new languages are welcome. Names typed in the ACP are the same in every
+language; built-in icons without a typed name use the language files.
+
 ## Development
 
 ```sh
 npm install
-npm test      # node:test
+npm test      # node:test — rules, validation, upload checks, rendering, settings store
 npm run lint  # eslint
 ```
 
+`lib/` holds the logic (`rules.js`, `icons.js`, `upload.js`, `config-store.js`, `lang.js`, `lru.js`);
+`library.js` wires it into NodeBB hooks and routes.
+
+## Roadmap
+
+- State overlays on the icon: pinned, locked and "solved" (the latter only when the `isSolved`
+  field of nodebb-plugin-question-and-answer is present; no hard dependency).
+- Optional icon of the latest topic in the category list.
+- Update the icon in the topic header right after the first post is edited (now shown after the
+  next page load).
+- Keep the icon when a topic is forked or merged under a new title.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).
+
 ## Licence
 
-MIT, see [LICENSE](LICENSE). The built-in icons in `static/icons/` are part of this package and
+MIT © [nairda](https://wirelab.pl), see [LICENSE](LICENSE). The built-in icons in `static/icons/` are part of this package and
 under the same licence.
