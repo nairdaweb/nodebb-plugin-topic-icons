@@ -42,6 +42,7 @@ const controllerHelpers = require.main.require('./src/controllers/helpers');
 const icons = require('./lib/icons');
 const upload = require('./lib/upload');
 const LRU = require('./lib/lru');
+const ConfigStore = require('./lib/config-store');
 const { pickLang, isLangCode } = require('./lib/lang');
 
 /** Hash under which meta.settings stores the plugin configuration (also used by public/admin.js). */
@@ -65,26 +66,9 @@ const plugin = module.exports;
  * - the local process gets the "action:settings.set" hook (plugin.onSettingsSet);
  * - the other processes get the "action:settings.set.<hash>" pubsub message that
  *   meta.settings.set() publishes (subscribed in plugin.init).
- * Both call invalidate().
+ * Both call store.invalidate(). Each config carries its generation (lib/config-store.js), and
+ * rendered icons are cached under that generation only while it is current.
  */
-let cached = null;
-/*
- * Bumped by invalidate(). Caches are written only when the generation is still the one seen
- * before the first await, so a request that started with the old settings cannot store a
- * result built from them after a save. Rendered icons also carry the generation in their key.
- */
-let generation = 0;
-
-/**
- * @returns {Promise<object>} normalised config, see lib/icons.js
- */
-async function getConfig() {
-	if (cached) return cached;
-	const started = generation;
-	const config = icons.normalize(await meta.settings.get(SETTINGS_KEY));
-	if (started === generation) cached = config;
-	return config;
-}
 
 /*
  * Rendered icons (name and HTML) per (generation, language, icon, default flag). A forum has a
@@ -93,15 +77,25 @@ async function getConfig() {
  */
 const htmlCache = new LRU(2000);
 
+const store = new ConfigStore(
+	async () => icons.normalize(await meta.settings.get(SETTINGS_KEY)),
+	() => htmlCache.clear()
+);
+
+/**
+ * @returns {Promise<object>} normalised config, see lib/icons.js
+ */
+function getConfig() {
+	return store.get();
+}
+
 /**
  * Drops the cached config and everything rendered from it.
  *
  * @returns {void}
  */
 function invalidate() {
-	generation += 1;
-	cached = null;
-	htmlCache.clear();
+	store.invalidate();
 }
 
 // ---------------------------------------------------------------- language
@@ -168,7 +162,7 @@ async function iconName(icon, lang) {
  * The returned object is a copy; `_lang`, `_iconId` and `_cid` are non-enumerable (not sent to
  * the browser) and let relocalize() re-render it in another language.
  *
- * @param {object} config normalised config
+ * @param {object} config normalised config (from getConfig(), with its generation)
  * @param {string} iconId value of the topic field
  * @param {number|string} cid category of the topic
  * @param {string} lang
@@ -177,8 +171,7 @@ async function iconName(icon, lang) {
 async function renderTopicIcon(config, iconId, cid, lang) {
 	const found = icons.effectiveIcon(config, iconId, cid);
 	if (!found) return null;
-	const started = generation;
-	const key = `${started}|${lang}|${found.icon.id}|${found.isDefault ? 1 : 0}`;
+	const key = `${config.generation}|${lang}|${found.icon.id}|${found.isDefault ? 1 : 0}`;
 	let rendered = htmlCache.get(key);
 	if (!rendered) {
 		const relativePath = nconf.get('relative_path') || '';
@@ -190,7 +183,7 @@ async function renderTopicIcon(config, iconId, cid, lang) {
 			isDefault: found.isDefault,
 			html: icons.buildHtml(found.icon, name, { relativePath, lang, isDefault: found.isDefault }),
 		};
-		if (started === generation) htmlCache.set(key, rendered);
+		if (store.isCurrent(config)) htmlCache.set(key, rendered);
 	}
 	const copy = Object.assign({}, rendered);
 	Object.defineProperty(copy, '_lang', { value: lang, enumerable: false });
