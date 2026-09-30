@@ -4,7 +4,6 @@ Topic icons for **NodeBB 4.x**. When creating a topic, the author picks an icon 
 managed by the administrators; the icon is shown next to the topic in topic lists and in the topic
 header.
 
-*Polska wersja: [README.pl.md](README.pl.md).*
 
 - **Compatibility:** NodeBB `^4.0.0`, tested with NodeBB 4.16, nodebb-plugin-composer-default 11 and
   the Harmony theme; Node.js 22 or newer.
