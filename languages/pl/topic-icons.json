@@ -9,9 +9,9 @@
 	"icon.discussion": "Dyskusja",
 	"icon-generic": "Ikona tematu",
 
-	"choose": "Wybierz miniaturę",
+	"choose": "Wybierz ikonę",
 	"choose-current": "Ikona tematu: %1",
-	"picker-title": "Wybierz miniaturę tematu",
+	"picker-title": "Wybierz ikonę tematu",
 	"picker-help": "Wybierz ikonę dla tematu. Na liście są tylko ikony dostępne w tej kategorii.",
 	"picker-none": "Bez ikony",
 	"picker-default": "Domyślna kategorii",
@@ -21,6 +21,8 @@
 	"picker-empty": "W tej kategorii nie ma ikon.",
 	"picker-cancel": "Anuluj",
 	"picker-select": "Użyj tej ikony",
+	"picker-unavailable": "Niedostępna",
+	"picker-unavailable-help": "Obecna ikona nie jest już tu dostępna. Wybierz inną ikonę albo ją usuń.",
 	"picker-load-error": "Nie udało się wczytać ikon.",
 
 	"error.unknown-icon": "Ta ikona tematu nie istnieje albo jest wyłączona.",

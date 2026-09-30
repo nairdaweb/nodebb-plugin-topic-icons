@@ -7,7 +7,8 @@
 	"chooser-mods": "Moderators and administrators only",
 	"chooser-group-label": "Group",
 	"chooser-group-none": "— choose a group —",
-	"chooser-help": "Users pick from the library only; they cannot upload their own images. Only the topic author or a moderator can change the icon later.",
+	"group-missing": "(does not exist)",
+	"chooser-help": "Users pick from the library only; they cannot upload their own images. Changing or removing the icon later follows the same rule, and only the topic author or a moderator can do it.",
 
 	"display": "Display",
 	"show-in-list": "Show icons in topic lists",
@@ -18,7 +19,7 @@
 	"default-inherit": "Forum-wide default",
 
 	"library": "Icon library",
-	"library-help": "Order is the order in the picker. An icon limited to no category is offered everywhere. Switched-off icons are no longer offered, but topics that already use them keep them. Removing an icon takes it off its topics (the category default is shown instead). Images: PNG, WebP or SVG, up to %1 KB; square images of 64×64 px or more look best.",
+	"library-help": "Order is the order in the picker. An icon limited to no category is offered everywhere; a topic moved to a category where its icon is not available loses it. Switched-off icons are no longer offered, but topics that already use them keep them. Removing an icon takes it off its topics when you save (the category default is shown instead) and deletes its uploaded image. Images: PNG, WebP or SVG, up to %1 KB; square images of 64×64 px or more look best. Images from other sites (https) are loaded by every visitor's browser from that site.",
 	"add-icon": "Add icon",
 	"restore-builtin": "Restore built-in icons",
 	"col-icon": "Icon",
@@ -39,7 +40,7 @@
 	"col-category": "Category",
 	"col-default": "Default icon",
 
-	"confirm-remove": "Remove the icon “%1”? Topics that use it will show the category default instead.",
+	"confirm-remove": "Remove the icon “%1”? When you save, topics that use it lose it (the category default is shown instead) and its uploaded image is deleted.",
 	"confirm-restore": "Add the built-in icons that are missing from the library?",
 	"restored": "Built-in icons added. Save to keep the change.",
 	"saved": "Settings saved.",
@@ -63,6 +64,8 @@
 	"error.too-many": "At most %1 icons.",
 	"error.chooser": "Unknown value of “Who can choose an icon”.",
 	"error.chooser-group": "Choose the group whose members can pick icons.",
+	"error.chooser-group-missing": "The group chosen in “Who can choose an icon” does not exist. Choose an existing group.",
+	"error.chooser-group-invalid": "This group cannot be used in “Who can choose an icon”. Choose another group.",
 	"error.default-unknown": "The forum-wide default icon is not in the library.",
 	"error.category-defaults": "The category defaults are not valid JSON.",
 	"error.category-default-unknown": "The default icon of category %1 is not in the library.",

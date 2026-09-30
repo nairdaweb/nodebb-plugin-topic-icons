@@ -7,7 +7,8 @@
 	"chooser-mods": "Tylko moderatorzy i administratorzy",
 	"chooser-group-label": "Grupa",
 	"chooser-group-none": "— wybierz grupę —",
-	"chooser-help": "Użytkownicy wybierają tylko z biblioteki, nie wgrywają własnych obrazków. Ikonę może później zmienić tylko autor tematu albo moderator.",
+	"group-missing": "(nie istnieje)",
+	"chooser-help": "Użytkownicy wybierają tylko z biblioteki, nie wgrywają własnych obrazków. Późniejsza zmiana albo usunięcie ikony podlega tej samej zasadzie i może to zrobić tylko autor tematu albo moderator.",
 
 	"display": "Wyświetlanie",
 	"show-in-list": "Pokazuj ikony na listach tematów",
@@ -18,7 +19,7 @@
 	"default-inherit": "Domyślna całego forum",
 
 	"library": "Biblioteka ikon",
-	"library-help": "Kolejność jest kolejnością w oknie wyboru. Ikona bez przypisanych kategorii jest dostępna wszędzie. Wyłączona ikona znika z wyboru, ale tematy, które już ją mają, zachowują ją. Usunięta ikona znika z tematów (zamiast niej pokazuje się domyślna kategorii). Obrazki: PNG, WebP albo SVG, do %1 KB; najlepiej kwadratowe, co najmniej 64×64 px.",
+	"library-help": "Kolejność jest kolejnością w oknie wyboru. Ikona bez przypisanych kategorii jest dostępna wszędzie; temat przeniesiony do kategorii, w której jego ikona nie jest dostępna, traci ją. Wyłączona ikona znika z wyboru, ale tematy, które już ją mają, zachowują ją. Usunięta ikona znika z tematów po zapisaniu (zamiast niej pokazuje się domyślna kategorii), a jej wgrany obrazek jest kasowany. Obrazki: PNG, WebP albo SVG, do %1 KB; najlepiej kwadratowe, co najmniej 64×64 px. Obrazki z innych serwisów (https) każda przeglądarka odwiedzającego pobiera z tamtego serwisu.",
 	"add-icon": "Dodaj ikonę",
 	"restore-builtin": "Przywróć wbudowane ikony",
 	"col-icon": "Ikona",
@@ -39,7 +40,7 @@
 	"col-category": "Kategoria",
 	"col-default": "Domyślna ikona",
 
-	"confirm-remove": "Usunąć ikonę „%1”? Tematy, które jej używają, pokażą domyślną ikonę kategorii.",
+	"confirm-remove": "Usunąć ikonę „%1”? Po zapisaniu tematy, które jej używają, stracą ją (pokażą domyślną ikonę kategorii), a jej wgrany obrazek zostanie skasowany.",
 	"confirm-restore": "Dodać do biblioteki brakujące wbudowane ikony?",
 	"restored": "Dodano wbudowane ikony. Zapisz, aby zachować zmianę.",
 	"saved": "Zapisano ustawienia.",
@@ -63,6 +64,8 @@
 	"error.too-many": "Najwyżej %1 ikon.",
 	"error.chooser": "Nieznana wartość „Kto może wybierać ikonę”.",
 	"error.chooser-group": "Wybierz grupę, której członkowie mogą wybierać ikony.",
+	"error.chooser-group-missing": "Grupa wybrana w „Kto może wybierać ikonę” nie istnieje. Wybierz istniejącą grupę.",
+	"error.chooser-group-invalid": "Tej grupy nie można użyć w „Kto może wybierać ikonę”. Wybierz inną grupę.",
 	"error.default-unknown": "Domyślnej ikony forum nie ma w bibliotece.",
 	"error.category-defaults": "Domyślne ikony kategorii nie są poprawnym JSON-em.",
 	"error.category-default-unknown": "Domyślnej ikony kategorii %1 nie ma w bibliotece.",

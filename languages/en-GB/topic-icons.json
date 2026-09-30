@@ -21,6 +21,8 @@
 	"picker-empty": "There are no icons in this category.",
 	"picker-cancel": "Cancel",
 	"picker-select": "Use this icon",
+	"picker-unavailable": "Unavailable",
+	"picker-unavailable-help": "The current icon is no longer available here. Choose another icon or remove it.",
 	"picker-load-error": "Could not load the icons.",
 
 	"error.unknown-icon": "This topic icon does not exist or is switched off.",
