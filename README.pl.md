@@ -10,6 +10,14 @@ tematu.
   Harmony; Node.js 22 lub nowszy.
 - **Autor:** [nairda](https://wirelab.pl) · **Licencja:** MIT
 
+## Zrzuty ekranu
+
+![Lista tematów: ikona tematu w miejscu awatara, awatar autora jako mała nakładka](https://raw.githubusercontent.com/nairdaweb/nodebb-plugin-topic-icons/main/docs/screenshot-list.png)
+
+![Okno wyboru ikony w edytorze z podglądem wiersza tematu](https://raw.githubusercontent.com/nairdaweb/nodebb-plugin-topic-icons/main/docs/screenshot-picker.png)
+
+*Na zrzutach własny motyw (nodebb-theme-wirelab), który wstawia ikonę w miejsce awatara; w Harmony ikona pojawia się przed tytułem.*
+
 ## Funkcje
 
 - **Wybór w edytorze:** przycisk „Wybierz miniaturę” obok tytułu otwiera siatkę ikon dostępnych

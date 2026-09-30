@@ -28,3 +28,6 @@ All notable changes to this project are documented here. The format follows
 - Server-side validation of the picked icon on posting (also for queued posts) and editing.
 - Admin-only upload route with CSRF, type/content/size checks and unique file names.
 - Eight built-in SVG icons; en-GB and pl translations.
+
+[Unreleased]: https://github.com/nairdaweb/nodebb-plugin-topic-icons/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/nairdaweb/nodebb-plugin-topic-icons/releases/tag/v1.0.0

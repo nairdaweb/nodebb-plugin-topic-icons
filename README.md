@@ -11,6 +11,14 @@ header.
 - **Author:** [nairda](https://wirelab.pl) · **Licence:** MIT
 - **Source and issues:** [github.com/nairdaweb/nodebb-plugin-topic-icons](https://github.com/nairdaweb/nodebb-plugin-topic-icons)
 
+## Screenshots
+
+![Topic list: the topic icon in place of the avatar, with the author's avatar as a small overlay](https://raw.githubusercontent.com/nairdaweb/nodebb-plugin-topic-icons/main/docs/screenshot-list.png)
+
+![Icon picker in the composer, with a preview of the topic row](https://raw.githubusercontent.com/nairdaweb/nodebb-plugin-topic-icons/main/docs/screenshot-picker.png)
+
+*Shown with a custom theme (nodebb-theme-wirelab) that puts the icon in place of the avatar; with Harmony the icon is shown in front of the title.*
+
 ## Features
 
 - **Picker in the composer:** a "Choose icon" button next to the title opens a grid of the icons
