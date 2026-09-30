@@ -19,12 +19,11 @@
     "nodebb-plugin",
     "topic",
     "icons",
-    "thumbnails",
     "composer",
     "categories"
   ],
   "nbbpm": {
-    "compatibility": "^4.0.0"
+    "compatibility": "^4.15.0"
   },
   "engines": {
     "node": ">=22"
