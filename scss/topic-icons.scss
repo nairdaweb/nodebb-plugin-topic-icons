@@ -139,6 +139,23 @@
 	}
 }
 
+// The topic's current icon when it is no longer offered: shown, but cannot be confirmed.
+.topic-icons-picker__opt--unavailable {
+	border-style: dashed;
+
+	.topic-icon {
+		opacity: 0.6;
+	}
+}
+
+.topic-icons-picker__badge {
+	max-width: 100%;
+	overflow: hidden;
+	font-size: 0.6875rem;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
 .topic-icons-picker__none {
 	display: inline-flex;
 	align-items: center;
@@ -168,6 +185,11 @@
 	height: 40px;
 	object-fit: contain;
 	border-radius: 0.375rem;
+}
+
+// ACP category table: indentation by depth in the category tree.
+.topic-icons-acp__cat {
+	padding-inline-start: calc(var(--ti-depth, 0) * 1.25rem);
 }
 
 @media (forced-colors: active) {
