@@ -122,3 +122,80 @@ test('escape never produces a translation token and uses named bracket entities'
 	assert.ok(!I.escape('[[x]]').includes('&#91;'));
 	assert.equal(I.escape(null), '');
 });
+
+test('cleanUrl refuses percent-encoded dot segments and slashes', () => {
+	['/assets/uploads/topic-icons/%2e%2e/%2E%2E/x.svg', '/a/%2e/b.png', '/a/./b.png', '/a/..%2fb.png', '/a/%5cb.png']
+		.forEach(u => assert.equal(I.cleanUrl(u), '', u));
+	assert.equal(I.cleanUrl('https://cdn.example.com/a%20b/c.png'), 'https://cdn.example.com/a%20b/c.png');
+});
+
+test('decodeEntities turns escaped text into plain text without parsing HTML', () => {
+	assert.equal(I.decodeEntities('Tom &amp; Jerry &quot;x&quot; &#39;y&#x27; &lsqb;&lsqb;a:b&rsqb;&rsqb;'), 'Tom & Jerry "x" \'y\' [[a:b]]');
+	assert.equal(I.decodeEntities('&lt;img src=x onerror=alert(1)&gt;'), '<img src=x onerror=alert(1)>', 'stays text');
+	assert.equal(I.decodeEntities('&hellip; &#8222;&#x201D; &unknown; &#0; &#xD800;'), '… „” &unknown; &#0; &#xD800;');
+	assert.equal(I.decodeEntities(I.escape('a<b>&"c"[d]')), 'a<b>&"c"[d]');
+	assert.equal(I.decodeEntities(null), '');
+	assert.equal(I.decodeEntities('&amp;lt;'), '&lt;', 'decoded once');
+});
+
+test('validateSettings: the chooser group must exist and must not be a group nobody can post from', () => {
+	const base = { icons: JSON.stringify(lib), chooser: 'group' };
+	assert.deepEqual(I.validateSettings(Object.assign({ chooserGroup: 'helpers' }, base), { groupExists: false }).errors,
+		['[[admin/plugins/topic-icons:error.chooser-group-missing]]']);
+	assert.deepEqual(I.validateSettings(Object.assign({ chooserGroup: 'helpers' }, base), { groupExists: true }).errors, []);
+	assert.deepEqual(I.validateSettings(Object.assign({ chooserGroup: 'helpers' }, base)).errors, [], 'not checked without the flag');
+	['guests', 'banned-users', 'spiders'].forEach(g => assert.deepEqual(
+		I.validateSettings(Object.assign({ chooserGroup: g }, base), { groupExists: true }).errors,
+		['[[admin/plugins/topic-icons:error.chooser-group-invalid]]'], g));
+	assert.deepEqual(I.validateSettings({ icons: JSON.stringify(lib), chooser: 'all', chooserGroup: 'gone' }, { groupExists: false }).errors, [],
+		'only checked for chooser "group"');
+});
+
+test('validateSettings on a partial save merged with the stored settings keeps the other keys', () => {
+	const stored = I.validateSettings({ icons: JSON.stringify(lib), chooser: 'mods', defaultIcon: 'question', categoryDefaults: '{"2":"linux"}' }).settings;
+	const merged = Object.assign({}, I.defaults(), stored, { showInList: 'off' });
+	const result = I.validateSettings(merged);
+	assert.deepEqual(result.errors, []);
+	assert.equal(result.settings.showInList, 'off');
+	assert.equal(result.settings.chooser, 'mods');
+	assert.equal(result.settings.icons, stored.icons);
+	assert.equal(result.settings.categoryDefaults, stored.categoryDefaults);
+	// Never saved before: the built-in library comes from the defaults.
+	const fresh = I.validateSettings(Object.assign({}, I.defaults(), {}, { showInList: 'off' }));
+	assert.deepEqual(fresh.errors, []);
+	assert.deepEqual(JSON.parse(fresh.settings.icons).map(i => i.id), I.BUILTIN_KEYS);
+});
+
+test('libraryChanges: removed icons and uploaded files no icon uses any more', () => {
+	const up = name => `/assets/uploads/topic-icons/${name}`;
+	const before = [
+		{ id: 'a', url: up('ti-abc-0123.png') },
+		{ id: 'b', url: up('ti-abd-4567.svg') },
+		{ id: 'c', url: '/assets/plugins/nodebb-plugin-topic-icons/icons/idea.svg' },
+		{ id: 'd', url: up('../ti-x-1.png') },
+	];
+	const after = [
+		{ id: 'b', url: up('ti-new-89ab.svg') }, // image replaced
+		{ id: 'c', url: '/assets/plugins/nodebb-plugin-topic-icons/icons/idea.svg' },
+		{ id: 'e', url: up('ti-abc-0123.png') }, // the removed icon's file is still used here
+	];
+	assert.deepEqual(I.libraryChanges(before, after), { ids: ['a', 'd'], files: ['ti-abd-4567.svg'] });
+	assert.deepEqual(I.libraryChanges(after, after), { ids: [], files: [] });
+	assert.equal(I.uploadedFile(up('ti-abc-0123.png?v=1')), 'ti-abc-0123.png');
+	['/assets/uploads/topic-icons/x.png', '/assets/uploads/topic-icons/ti-a-b/../x.png', 'https://x.com/assets/uploads/topic-icons/ti-a-0.png', null]
+		.forEach(u => assert.equal(I.uploadedFile(u), '', String(u)));
+});
+
+test('categoryTree: parents before children, siblings by order, with depth', () => {
+	const tree = I.categoryTree([
+		{ cid: 3, parentCid: 1, order: 2, name: 'C' },
+		{ cid: 1, parentCid: 0, order: 2, name: 'A' },
+		{ cid: 2, parentCid: 1, order: 1, name: 'B' },
+		{ cid: 4, parentCid: 0, order: 1, name: 'D' },
+		{ cid: 5, parentCid: 99, order: 1, name: 'orphan' },
+		{ cid: 6, parentCid: 7, name: 'loop1' },
+		{ cid: 7, parentCid: 6, name: 'loop2' },
+	]);
+	assert.deepEqual(tree.map(c => `${c.cid}:${c.depth}`), ['4:0', '5:0', '1:0', '2:1', '3:1', '6:0', '7:0']);
+	assert.deepEqual(I.categoryTree(null), []);
+});

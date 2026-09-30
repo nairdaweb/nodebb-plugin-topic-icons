@@ -57,3 +57,17 @@ test('LRU: a burst of new keys does not drop entries that keep being used', () =
 	assert.equal(c.size, 10);
 	assert.equal(new LRU(0).max, 1);
 });
+
+test('LRU with a time to live: expired entries are gone', () => {
+	let now = 1000;
+	const c = new LRU(5, { ttl: 100, now: () => now });
+	c.set('uid:1', 'pl');
+	assert.equal(c.get('uid:1'), 'pl');
+	now += 99;
+	assert.equal(c.has('uid:1'), true);
+	now += 1;
+	assert.equal(c.get('uid:1'), undefined);
+	assert.equal(c.size, 0);
+	c.set('uid:2', '');
+	assert.equal(c.get('uid:2'), '', 'an empty value is a hit, not a miss');
+});
