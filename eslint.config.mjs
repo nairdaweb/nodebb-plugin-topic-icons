@@ -21,7 +21,7 @@ export default [
 		languageOptions: {
 			ecmaVersion: 2020,
 			sourceType: 'script',
-			globals: { ...globals.browser, define: 'readonly', require: 'readonly', $: 'readonly', ajaxify: 'readonly', config: 'readonly' },
+			globals: { ...globals.browser, define: 'readonly', require: 'readonly', $: 'readonly', ajaxify: 'readonly', config: 'readonly', app: 'readonly' },
 		},
 		rules: {
 			indent: ['error', 'tab', { SwitchCase: 1 }],

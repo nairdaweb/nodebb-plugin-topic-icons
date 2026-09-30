@@ -11,8 +11,8 @@
  * other fields. Validation comes from lib/icons.js, the same module the server uses (exposed to
  * the browser as "topic-icons/icons" through plugin.json); the server checks everything again
  * when the settings are saved (library.js onSettingsSave).
- * ajaxify.data.defaults, categoryList, groupList and maxUploadKb come from the route in
- * library.js.
+ * ajaxify.data.defaults, categoryList (tree order, with depth), groupList, maxUploadKb and
+ * canUpload come from the route in library.js.
  */
 define('admin/plugins/topic-icons', ['settings', 'alerts', 'translator', 'bootbox', 'topic-icons/icons'], function (Settings, alerts, translator, bootbox, I) {
 	const ACP = {};
@@ -27,6 +27,45 @@ define('admin/plugins/topic-icons', ['settings', 'alerts', 'translator', 'bootbo
 	let catDefaults = {};
 	/** False until the stored settings were read; saving is refused before that. */
 	let loaded = false;
+
+	/**
+	 * Marks the page as changed, so that NodeBB asks before navigating away without saving.
+	 *
+	 * @param {boolean} value
+	 * @returns {void}
+	 */
+	function setUnsaved(value) {
+		if (!window.app) return;
+		app.flags = app.flags || {};
+		app.flags._unsaved = !!value;
+	}
+
+	/**
+	 * @param {string} text translated (HTML-escaped) text
+	 * @returns {string} plain text; a string operation, nothing is parsed as HTML
+	 */
+	function plain(text) {
+		return I.decodeEntities(text);
+	}
+
+	/**
+	 * @param {string} text markup with translation tokens
+	 * @returns {Promise<string>} translated markup
+	 */
+	function translate(text) {
+		return new Promise(function (resolve) {
+			translator.translate(text, resolve);
+		});
+	}
+
+	/**
+	 * @param {object} c category from ajaxify.data.categoryList
+	 * @returns {string} escaped name, indented by its depth in the category tree
+	 */
+	function categoryLabel(c) {
+		const depth = Math.min(parseInt(c.depth, 10) || 0, 10);
+		return (depth ? '\u2003'.repeat(depth) + '\u2514 ' : '') + esc(c.name);
+	}
 
 	/**
 	 * @param {string} key
@@ -113,7 +152,7 @@ define('admin/plugins/topic-icons', ['settings', 'alerts', 'translator', 'bootbo
 		const src = previewUrl(icon.url);
 		const cats = (ajaxify.data.categoryList || []).map(function (c) {
 			const selected = icon.cids.indexOf(parseInt(c.cid, 10)) !== -1 ? ' selected' : '';
-			return '<option value="' + esc(c.cid) + '"' + selected + '>' + esc(c.name) + '</option>';
+			return '<option value="' + esc(c.cid) + '"' + selected + '>' + categoryLabel(c) + '</option>';
 		}).join('');
 		const placeholder = icon.key ? '[[topic-icons:icon.' + icon.key + ']]' : tx('name-placeholder');
 		return '<tr data-i="' + i + '">' +
@@ -121,7 +160,7 @@ define('admin/plugins/topic-icons', ['settings', 'alerts', 'translator', 'bootbo
 			'<td style="min-width:12rem"><input type="text" class="form-control form-control-sm" maxlength="' + I.MAX_NAME + '" data-field="name" value="' + esc(icon.name) + '" placeholder="' + placeholder + '"></td>' +
 			'<td style="min-width:16rem"><div class="input-group input-group-sm">' +
 				'<input type="text" class="form-control" data-field="url" value="' + esc(icon.url) + '" placeholder="/assets/uploads/… or https://…">' +
-				'<button type="button" class="btn btn-light" data-ti-action="upload" title="' + tx('upload') + '" aria-label="' + tx('upload') + '"><i class="fa fa-upload"></i></button></div></td>' +
+				(ajaxify.data.canUpload ? '<button type="button" class="btn btn-light" data-ti-action="upload" title="' + tx('upload') + '" aria-label="' + tx('upload') + '"><i class="fa fa-upload"></i></button>' : '') + '</div></td>' +
 			'<td style="min-width:12rem"><select multiple class="form-select form-select-sm" size="3" data-field="cids" aria-label="' + tx('col-categories') + '" title="' + tx('all-categories') + '">' + cats + '</select></td>' +
 			'<td class="text-center"><input type="checkbox" class="form-check-input" data-field="active"' + (icon.active ? ' checked' : '') + ' aria-label="' + tx('col-active') + '"></td>' +
 			'<td><div class="btn-group btn-group-sm">' +
@@ -147,18 +186,26 @@ define('admin/plugins/topic-icons', ['settings', 'alerts', 'translator', 'bootbo
 	 * structural change; plain typing only updates the model. The markup contains translation
 	 * tokens, so it is translated before insertion (all stored text is escaped by esc()).
 	 *
-	 * @returns {void}
+	 * @returns {Promise<void>} resolved once the new markup is in the page
 	 */
 	function render() {
-		translator.translate(library.map(rowHtml).join(''), function (html) { $('#ti-library tbody').html(html); });
 		$('#ti-empty').toggleClass('d-none', library.length > 0);
-		translator.translate(iconOptions($('#ti-default').val(), 'default-none'), function (html) { $('#ti-default-select').html(html); });
 		const rows = (ajaxify.data.categoryList || []).map(function (c) {
-			return '<tr><td>' + esc(c.name) + '</td><td><select class="form-select form-select-sm" data-cid="' + esc(c.cid) + '" style="max-width:20rem">' +
+			const depth = Math.min(parseInt(c.depth, 10) || 0, 10);
+			return '<tr><td><span class="topic-icons-acp__cat d-inline-block" style="--ti-depth:' + depth + '">' + esc(c.name) + '</span></td>' +
+				'<td><select class="form-select form-select-sm" data-cid="' + esc(c.cid) + '" style="max-width:20rem" aria-label="' + esc(c.name) + '">' +
 				iconOptions(catDefaults[c.cid] || '', 'default-inherit') + '</select></td></tr>';
 		}).join('');
-		translator.translate(rows, function (html) { $('#ti-cat-defaults tbody').html(html); });
-		renderChecks();
+		return Promise.all([
+			translate(library.map(rowHtml).join('')),
+			translate(iconOptions($('#ti-default').val(), 'default-none')),
+			translate(rows),
+		]).then(function (html) {
+			$('#ti-library tbody').html(html[0]);
+			$('#ti-default-select').html(html[1]);
+			$('#ti-cat-defaults tbody').html(html[2]);
+			renderChecks();
+		});
 	}
 
 	/**
@@ -179,21 +226,31 @@ define('admin/plugins/topic-icons', ['settings', 'alerts', 'translator', 'bootbo
 	}
 
 	/**
+	 * @param {string} name group name
+	 * @returns {boolean} whether the group is one of the groups listed by the server
+	 */
+	function groupListed(name) {
+		return (ajaxify.data.groupList || []).indexOf(name) !== -1;
+	}
+
+	/**
 	 * @returns {{errors: string[], settings: object}} same checks as the server
 	 */
 	function validate() {
 		syncHidden();
+		const group = $('#ti-group').val();
 		return I.validateSettings({
 			chooser: $('#ti-chooser').val(),
-			chooserGroup: $('#ti-group').val(),
+			chooserGroup: group,
 			defaultIcon: $('#ti-default').val(),
 			categoryDefaults: $('#ti-cat-json').val(),
 			icons: $('#ti-icons-json').val(),
-		});
+		}, { groupExists: group ? groupListed(group) : undefined });
 	}
 
 	/**
-	 * Shows validation errors under the tables and marks invalid image fields.
+	 * Shows validation errors under the tables and marks invalid image fields (of the rows in
+	 * the page, so call it after render() has put them there).
 	 *
 	 * @returns {void}
 	 */
@@ -227,6 +284,7 @@ define('admin/plugins/topic-icons', ['settings', 'alerts', 'translator', 'bootbo
 			const src = previewUrl(icon.url);
 			el.closest('tr').find('img.topic-icons-acp__img').attr('src', src || '');
 		} else icon.name = el.val();
+		setUnsaved(true);
 		renderChecks();
 	}
 
@@ -268,11 +326,12 @@ define('admin/plugins/topic-icons', ['settings', 'alerts', 'translator', 'bootbo
 			}).then(function (url) {
 				icon.url = stripRelativePath(url);
 				syncHidden();
+				setUnsaved(true);
 				render();
 				alerts.success(tx('uploaded'));
 			}).catch(function (err) {
 				translator.translate(String(err.message || err), function (reason) {
-					message('upload-failed', $('<div>').html(reason).text()).then(function (html) { alerts.error(html); });
+					message('upload-failed', plain(reason)).then(function (html) { alerts.error(html); });
 				});
 			});
 		});
@@ -292,8 +351,10 @@ define('admin/plugins/topic-icons', ['settings', 'alerts', 'translator', 'bootbo
 		if (action === 'add') {
 			const id = 'c-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
 			library.push({ id: id, key: '', name: '', url: '', cids: [], active: true });
-			render();
-			$('#ti-library tbody tr').last().find('[data-field="name"]').trigger('focus');
+			setUnsaved(true);
+			render().then(function () {
+				$('#ti-library tbody tr').last().find('[data-field="name"]').trigger('focus');
+			});
 			return;
 		}
 		if (action === 'restore') {
@@ -303,6 +364,7 @@ define('admin/plugins/topic-icons', ['settings', 'alerts', 'translator', 'bootbo
 					I.builtinIcons().forEach(function (icon) {
 						if (!library.some(function (e) { return e.id === icon.id; })) library.push(icon);
 					});
+					setUnsaved(true);
 					render();
 					alerts.info(tx('restored'));
 				});
@@ -314,21 +376,42 @@ define('admin/plugins/topic-icons', ['settings', 'alerts', 'translator', 'bootbo
 			upload(library[i]);
 		} else if (action === 'up' && i > 0) {
 			library.splice(i - 1, 0, library.splice(i, 1)[0]);
-			render();
+			setUnsaved(true);
+			render().then(function () { focusRowButton(i - 1, 'up'); });
 		} else if (action === 'down' && i < library.length - 1) {
 			library.splice(i + 1, 0, library.splice(i, 1)[0]);
-			render();
+			setUnsaved(true);
+			render().then(function () { focusRowButton(i + 1, 'down'); });
 		} else if (action === 'remove') {
 			translator.translate(label(library[i]), function (name) {
-				message('confirm-remove', $('<div>').html(name).text()).then(function (html) {
+				message('confirm-remove', plain(name)).then(function (html) {
 					bootbox.confirm(html, function (ok) {
 						if (!ok) return;
 						library.splice(i, 1);
-						render();
+						setUnsaved(true);
+						render().then(function () {
+							const rows = $('#ti-library tbody tr');
+							if (rows.length) rows.eq(Math.min(i, rows.length - 1)).find('[data-field="name"]').trigger('focus');
+							else $('[data-ti-action="add"]').trigger('focus');
+						});
 					});
 				});
 			});
 		}
+	}
+
+	/**
+	 * Keeps the keyboard on the moved row: focuses its move button again (or the other one when
+	 * the row reached the top or bottom).
+	 *
+	 * @param {number} index row index after the move
+	 * @param {string} action "up" or "down"
+	 * @returns {void}
+	 */
+	function focusRowButton(index, action) {
+		const row = $('#ti-library tbody tr').eq(index);
+		const btn = row.find('[data-ti-action="' + action + '"]');
+		(btn.prop('disabled') ? row.find('[data-ti-action="' + (action === 'up' ? 'down' : 'up') + '"]') : btn).trigger('focus');
 	}
 
 	/**
@@ -347,7 +430,7 @@ define('admin/plugins/topic-icons', ['settings', 'alerts', 'translator', 'bootbo
 				// Letting Save through would overwrite the stored settings with an empty page.
 				$('#save').prop('disabled', true);
 				translator.translate(String(err.message || err), function (reason) {
-					message('load-error', $('<div>').html(reason).text()).then(function (html) { alerts.error(html, 0); });
+					message('load-error', plain(reason)).then(function (html) { alerts.error(html, 0); });
 				});
 				return;
 			}
@@ -359,7 +442,16 @@ define('admin/plugins/topic-icons', ['settings', 'alerts', 'translator', 'bootbo
 			}
 			library = I.normalize({ icons: $('#ti-icons-json').val() || d.icons }).icons;
 			catDefaults = parse($('#ti-cat-json').val(), {}) || {};
-			$('#ti-chooser-group').val($('#ti-group').val() || '');
+			const group = $('#ti-group').val() || '';
+			if (group && !groupListed(group)) {
+				// The stored group was deleted or renamed: keep it visible, marked, so that the
+				// validation explains what to fix.
+				translate(tx('group-missing')).then(function (suffix) {
+					$('#ti-chooser-group').append('<option value="' + esc(group) + '">' + esc(group) + ' ' + suffix + '</option>').val(group);
+					renderChecks();
+				});
+			}
+			$('#ti-chooser-group').val(group);
 			loaded = true;
 			render();
 		});
@@ -370,13 +462,18 @@ define('admin/plugins/topic-icons', ['settings', 'alerts', 'translator', 'bootbo
 			const cid = $(this).attr('data-cid');
 			if ($(this).val()) catDefaults[cid] = $(this).val();
 			else delete catDefaults[cid];
+			setUnsaved(true);
 			renderChecks();
 		});
 		form.on('change', '#ti-default-select', function () {
 			$('#ti-default').val($(this).val());
+			setUnsaved(true);
 			renderChecks();
 		});
-		form.on('change', '#ti-chooser, #ti-chooser-group', renderChecks);
+		form.on('change', '#ti-chooser, #ti-chooser-group, #ti-showInList, #ti-showInTopic', function () {
+			setUnsaved(true);
+			renderChecks();
+		});
 
 		$('#save').on('click', function (ev) {
 			ev.preventDefault();
@@ -398,6 +495,7 @@ define('admin/plugins/topic-icons', ['settings', 'alerts', 'translator', 'bootbo
 					return;
 				}
 				library = I.normalize({ icons: result.settings.icons }).icons;
+				setUnsaved(false);
 				alerts.success(tx('saved'));
 				render();
 			});
