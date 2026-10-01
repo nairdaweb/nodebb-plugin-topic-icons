@@ -68,6 +68,7 @@
 	"upload-size": "Obrazek jest za duży (najwyżej %1 KB).",
 	"upload-missing": "Nie otrzymano pliku.",
 	"upload-forbidden": "Tylko administratorzy mogą wgrywać obrazki.",
+	"upload-rate-limit": "Zbyt wiele wgrań w krótkim czasie. Odczekaj minutę i spróbuj ponownie.",
 	"upload-svg-unsafe": "Ten plik SVG zawiera skrypty, obsługę zdarzeń albo zewnętrzne odnośniki i został odrzucony.",
 	"cover-upload-type": "Akceptowane są tylko obrazki PNG, JPEG, WebP, GIF i SVG, a zawartość musi pasować do rozszerzenia pliku.",
 

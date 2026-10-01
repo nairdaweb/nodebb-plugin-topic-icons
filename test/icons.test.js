@@ -117,6 +117,37 @@ test('buildHtml escapes the name, keeps [[ ]] out of the markup and adds relativ
 	assert.ok(I.buildHtml(icon, 'x', { isDefault: true }).startsWith('<span class="topic-icon topic-icon--default"'));
 });
 
+/** Minimal stand-in for document: elements record attributes and children, nothing is parsed. */
+const fakeDoc = {
+	createElement(tag) {
+		return {
+			tagName: tag.toUpperCase(),
+			className: '',
+			attrs: {},
+			children: [],
+			setAttribute(name, value) { this.attrs[name] = String(value); },
+			appendChild(child) { this.children.push(child); return child; },
+		};
+	},
+};
+
+test('buildElement builds the icon with DOM methods and refuses bad ids and URLs', () => {
+	const el = I.buildElement(fakeDoc, { id: 'linux', name: '<img src=x onerror=alert(1)>', url: '/forum/assets/uploads/topic-icons/ti-1.png', isDefault: true }, { lang: 'pl' });
+	assert.equal(el.tagName, 'SPAN');
+	assert.equal(el.className, 'topic-icon topic-icon--default');
+	assert.deepEqual(el.attrs, { 'data-topic-icon': 'linux', 'data-ti-lang': 'pl' });
+	const img = el.children[0];
+	assert.equal(img.tagName, 'IMG');
+	assert.equal(img.attrs.src, '/forum/assets/uploads/topic-icons/ti-1.png');
+	assert.equal(img.attrs.alt, '<img src=x onerror=alert(1)>', 'the name stays text');
+	assert.equal(img.attrs.referrerpolicy, 'no-referrer');
+	assert.equal(I.buildElement(fakeDoc, { id: 'a', name: 'x', url: 'https://cdn.example.com/a.svg' }).className, 'topic-icon');
+	['javascript:alert(1)', '//evil.example/a.png', 'data:image/png;base64,AAAA', '/a.png" onerror="x', 'http://x.com/a.png', '/x/../a.png']
+		.forEach(url => assert.equal(I.buildElement(fakeDoc, { id: 'a', name: 'x', url }), null, url));
+	assert.equal(I.buildElement(fakeDoc, { id: '"><x', name: 'x', url: '/a.png' }), null);
+	assert.equal(I.buildElement(fakeDoc, null), null);
+});
+
 test('escape never produces a translation token and uses named bracket entities', () => {
 	assert.equal(I.escape('[[a:b]]'), '&lsqb;&lsqb;a:b&rsqb;&rsqb;');
 	assert.ok(!I.escape('[[x]]').includes('&#91;'));

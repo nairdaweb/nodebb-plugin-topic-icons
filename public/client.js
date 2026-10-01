@@ -571,16 +571,17 @@
 		});
 		const tids = Object.keys(stale).slice(0, 100);
 		if (!tids.length) return;
-		apiGet('/plugins/topic-icons/icons', { tids: tids.join(','), lang: lang }).then(function (res) {
-			const found = (res && res.icons) || {};
+		Promise.all([apiGet('/plugins/topic-icons/icons', { tids: tids.join(','), lang: lang }), lib()]).then(function (results) {
+			const found = (results[0] && results[0].icons) || {};
+			const I = results[1];
 			tids.forEach(function (tid) {
 				const icon = found[tid];
-				if (!icon || !icon.html) return;
+				if (!icon) return;
 				stale[tid].forEach(function (el) {
 					if (!el.parentNode) return;
-					const tmp = document.createElement('span');
-					tmp.innerHTML = icon.html; // server-built, admin input escaped
-					if (tmp.firstChild) el.replaceWith(tmp.firstChild);
+					// Built from the icon data with DOM methods; the HTML in the response is not used.
+					const fresh = I.buildElement(document, icon, { lang: lang });
+					if (fresh) el.replaceWith(fresh);
 				});
 			});
 		}, function () {

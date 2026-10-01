@@ -53,6 +53,8 @@ const rules = require('./lib/rules');
 const upload = require('./lib/upload');
 const LRU = require('./lib/lru');
 const ConfigStore = require('./lib/config-store');
+const { createLimiter } = require('./lib/ratelimit');
+const { tempUploadPath, fileInFolder } = require('./lib/safe-path');
 const { pickLang, isLangCode } = require('./lib/lang');
 
 const { isLocalUid } = rules;
@@ -477,7 +479,7 @@ function indexKey(id) {
  */
 plugin.init = async function ({ router }) {
 	// setupAdminPageRoute adds NodeBB's admin middleware, so only administrators reach this page.
-	routeHelpers.setupAdminPageRoute(router, '/admin/plugins/topic-icons', [], async (req, res) => {
+	routeHelpers.setupAdminPageRoute(router, '/admin/plugins/topic-icons', [limits.adminPage], async (req, res) => {
 		const cids = await categories.getAllCidsFromSet('categories:cid');
 		const cats = (await categories.getCategoriesFields(cids, ['cid', 'name', 'parentCid', 'order', 'disabled']))
 			.filter(c => c && parseInt(c.cid, 10) > 0);
@@ -506,12 +508,14 @@ plugin.init = async function ({ router }) {
 
 	// Icon upload. Administrators only, checked before multer so that nobody else can write
 	// files to the temporary folder; with the CSRF token of the ACP session. Type, content and
-	// size are checked by lib/upload.js, and the file is stored under a new unique name.
+	// size are checked by lib/upload.js, and the file is stored under a new unique name. The
+	// request limiter also runs before multer, so the body is not read once the limit is hit.
 	router.post(
 		'/api/admin/plugins/topic-icons/upload',
 		middleware.ensureLoggedIn,
 		middleware.applyCSRF,
 		ensureAdmin,
+		limits.upload,
 		uploadMiddleware.single('file'),
 		routeHelpers.tryRoute(plugin._uploadIcon, (err, res) => res.status(400).json({ error: err.message }))
 	);
@@ -521,6 +525,7 @@ plugin.init = async function ({ router }) {
 		middleware.ensureLoggedIn,
 		middleware.applyCSRF,
 		ensureAdmin,
+		limits.upload,
 		uploadMiddleware.single('file'),
 		routeHelpers.tryRoute(plugin._uploadCover, (err, res) => res.status(400).json({ error: err.message }))
 	);
@@ -532,6 +537,24 @@ plugin.init = async function ({ router }) {
 	}
 
 	pubsub.on(`action:settings.set.${SETTINGS_KEY}`, () => store.invalidate());
+};
+
+/*
+ * Request limits per user (guests: per IP address), counted in memory by each NodeBB process
+ * (lib/ratelimit.js). Generous for normal use; they only stop scripted floods.
+ */
+const limits = {
+	adminPage: createLimiter({ windowMs: 60 * 1000, max: 60 }),
+	upload: createLimiter({
+		windowMs: 60 * 1000,
+		max: 20,
+		onLimit: (req, res) => res.status(429).json({ error: `[[${icons.ACP_NAMESPACE}:upload-rate-limit]]` }),
+	}),
+	api: createLimiter({
+		windowMs: 60 * 1000,
+		max: 300,
+		onLimit: (req, res) => controllerHelpers.formatApiResponse(429, res),
+	}),
 };
 
 /**
@@ -588,20 +611,28 @@ async function storeUpload(req, res, opts) {
 		res.status(400).json({ error: `[[${icons.ACP_NAMESPACE}:${key === 'upload-type' ? opts.typeKey : key}${arg}]]` });
 	};
 	const f = req.file;
+	// Only multer's temporary file is read, copied and deleted: a regular file inside the
+	// system temporary folder, never a symbolic link (lib/safe-path.js).
+	let tempPath = null;
 	try {
 		if (!f || !f.path) return fail('upload-missing');
+		tempPath = await tempUploadPath(f.path);
+		if (!tempPath) {
+			winston.warn('[topic-icons] Upload refused: the temporary file is not in the temporary folder');
+			return fail('upload-missing');
+		}
 		if (f.size > opts.maxBytes) return fail('upload-size');
-		const content = await fs.promises.readFile(f.path);
+		const content = await fs.promises.readFile(tempPath);
 		const result = opts.check(f, content);
 		if (result.error) return fail(result.error);
 		if (result.ext === 'svg' && !upload.isSafeSvg(content.toString('utf8'))) return fail('upload-svg-unsafe');
 		const name = upload.uniqueName(result.ext, crypto.randomBytes(8).toString('hex'), undefined, opts.prefix);
-		const stored = await file.saveFileToLocal(name, UPLOAD_FOLDER, f.path);
+		const stored = await file.saveFileToLocal(name, UPLOAD_FOLDER, tempPath);
 		res.json({ url: stored.url });
 	} finally {
 		// Newer NodeBB versions delete multer's temporary file themselves; doing it here as well
 		// keeps refused uploads from piling up in the temporary folder on any version.
-		if (f && f.path) fs.promises.unlink(f.path).catch(() => {});
+		if (tempPath) fs.promises.unlink(tempPath).catch(() => {});
 	}
 }
 
@@ -647,7 +678,7 @@ async function topicForPicker(query) {
  * @returns {Promise<void>}
  */
 plugin.addApiRoutes = async function ({ router }) {
-	routeHelpers.setupApiRoute(router, 'get', '/topic-icons/choices', [], async (req, res) => {
+	routeHelpers.setupApiRoute(router, 'get', '/topic-icons/choices', [limits.api], async (req, res) => {
 		const config = await store.get();
 		const uid = req.uid;
 		let cid;
@@ -698,7 +729,7 @@ plugin.addApiRoutes = async function ({ router }) {
 		});
 	});
 
-	routeHelpers.setupApiRoute(router, 'get', '/topic-icons/icons', [], async (req, res) => {
+	routeHelpers.setupApiRoute(router, 'get', '/topic-icons/icons', [limits.api], async (req, res) => {
 		const raw = String(req.query.tids || '').split(',').slice(0, MAX_RELOCALIZE);
 		const tids = raw.map(icons.cleanCid).filter(Boolean);
 		if (!tids.length) return controllerHelpers.formatApiResponse(400, res);
@@ -775,8 +806,8 @@ async function cleanUp(changes) {
 	}
 	const folder = path.join(nconf.get('upload_path'), UPLOAD_FOLDER);
 	await Promise.all(changes.files.map(async (name) => {
-		const target = path.join(folder, name);
-		if (path.dirname(target) !== folder) return;
+		const target = fileInFolder(folder, name);
+		if (!target) return;
 		try {
 			await fs.promises.unlink(target);
 		} catch (err) {

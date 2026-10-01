@@ -3,6 +3,22 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [1.1.1] - 2026-10-01
+
+### Security
+- Uploads: only multer's temporary file is read, copied and deleted. Its path must resolve to a
+  regular file inside the system temporary folder, without `..` segments and not through a symbolic
+  link (`lib/safe-path.js`); anything else is refused. Applies to icon and category cover uploads.
+- The clean-up of unused uploaded files accepts plain file names inside the plugin's upload folder
+  only.
+- Request limits per user (guests: per IP address), counted in memory without new dependencies
+  (`lib/ratelimit.js`): 20 uploads per minute, checked after the administrator check and before the
+  file is received; 60 loads of the ACP page per minute; 300 requests per minute to the
+  `choices` and `icons` API routes. Above the limit the answer is `429` with `Retry-After`.
+- Icons re-rendered in the viewer's language are built from the icon data with DOM methods (the URL
+  checked again), no longer by inserting HTML from the API response.
+- Findings reported by Snyk Code (CWE-23, CWE-770, CWE-79).
+
 ## [1.1.0] - 2026-10-01
 
 ### Added
@@ -54,5 +70,6 @@ First release. Requires NodeBB 4.15 or newer and Node.js 22 or newer.
   external links or external style resources, and unique file names.
 - Eight built-in SVG icons; en-GB and pl translations.
 
+[1.1.1]: https://github.com/nairdaweb/nodebb-plugin-topic-icons/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/nairdaweb/nodebb-plugin-topic-icons/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/nairdaweb/nodebb-plugin-topic-icons/releases/tag/v1.0.0
