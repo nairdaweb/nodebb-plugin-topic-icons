@@ -231,6 +231,8 @@ answer is `429`.
 
 ## Security notes
 
+**Review and scanning.** Every release runs the unit tests and the linter. In October 2026 the code went through an independent code review and a Snyk Code scan; all reported issues were fixed, and the scan showed no open findings at that time. This is a point-in-time result, not a guarantee. Please report vulnerabilities privately — see [SECURITY.md](SECURITY.md).
+
 - Uploads: administrators only (the ACP page is open to `admin:settings`, but the upload button
   and route are not); extension, MIME type and file content must agree (PNG, WebP, SVG); SVGs with
   scripts, event handlers, external links or external resources in styles (`url(…)` other than
