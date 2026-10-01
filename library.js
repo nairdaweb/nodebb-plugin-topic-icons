@@ -13,7 +13,10 @@
  *   queue, and when its first post is edited (lib/rules.js); a topic moved to a category where
  *   its icon is not available loses it;
  * - lists of topics get `topicIcon` from fields NodeBB has already loaded (no extra topic query),
- *   the topic page gets it too; everything is rendered in the viewer's language (see "Language").
+ *   the topic page gets it too; everything is rendered in the viewer's language (see "Language");
+ * - topic covers (lib/covers.js): a topic without NodeBB thumbnails gets the first image of its
+ *   first post or the default cover of its category as a thumbnail at display time (see
+ *   "Covers").
  *
  * The hook handlers below are referenced by name from plugin.json; getTopicIcons is an API for
  * other plugins and themes.
@@ -45,6 +48,7 @@ const controllerHelpers = require.main.require('./src/controllers/helpers');
 const batch = require.main.require('./src/batch');
 
 const icons = require('./lib/icons');
+const covers = require('./lib/covers');
 const rules = require('./lib/rules');
 const upload = require('./lib/upload');
 const LRU = require('./lib/lru');
@@ -62,6 +66,12 @@ const UPLOAD_FOLDER = 'topic-icons';
  * posts.edit) uses the same name, and lib/rules.js reads it as data.iconId.
  */
 const TOPIC_FIELD = 'iconId';
+/**
+ * Topic field with the first image of the first post, found once per first post (JSON, see
+ * lib/covers.js parseScan). Written when it is missing or belongs to another post, and when the
+ * first post is edited.
+ */
+const COVER_FIELD = 'coverScan';
 /** Most topics getTopicIcons() renders in one call. */
 const MAX_TIDS = 500;
 /** Most topics the /topic-icons/icons route renders in one request. */
@@ -91,7 +101,12 @@ const plugin = module.exports;
 const htmlCache = new LRU(2000);
 
 const store = new ConfigStore(
-	async () => icons.normalize(await meta.settings.get(SETTINGS_KEY)),
+	async () => {
+		const raw = await meta.settings.get(SETTINGS_KEY);
+		const config = icons.normalize(raw);
+		config.covers = covers.normalize(raw);
+		return config;
+	},
 	() => htmlCache.clear()
 );
 
@@ -287,6 +302,134 @@ plugin.getTopicIcons = async function (tids, opts) {
 	});
 };
 
+// ---------------------------------------------------------------- covers
+
+/*
+ * Covers are added at display time to topics that have no NodeBB thumbnails (lib/covers.js
+ * pickCover): first image of the first post → default cover of the category → none. They go into
+ * `thumbs`, so themes show them where they show thumbnails and NodeBB's own viewer opens them on
+ * the topic page; nothing is written into the topic's thumbnails.
+ *
+ * The first image is found once per first post and kept in the topic field COVER_FIELD together
+ * with the pid it belongs to: written when the first post is edited (action:post.edit), and for
+ * topics without it (older topics, new topics) the first time they are listed, with one post
+ * query for the whole list. Lists of topics that were already scanned cost no extra query; an
+ * edit that removes the image clears the cover right away.
+ */
+
+/**
+ * Where NodeBB serves uploads, for lib/covers.js.
+ *
+ * @returns {{uploadUrl: string, relativePath: string, baseUrl: string}}
+ */
+function siteInfo() {
+	return {
+		uploadUrl: nconf.get('upload_url') || '/assets/uploads',
+		relativePath: nconf.get('relative_path') || '',
+		baseUrl: String(nconf.get('base_url') || nconf.get('url') || '').replace(/(^https?:\/\/[^/]+).*$/i, '$1'),
+	};
+}
+
+/**
+ * Scan results for topics, aligned with `list`: stored ones when they belong to the current first
+ * post, otherwise the first posts are read (one query) and the results stored.
+ *
+ * @param {Array<object>} list topic objects (tid, mainPid and COVER_FIELD as loaded by NodeBB)
+ * @returns {Promise<Array<{local: string, any: string}|null>>}
+ */
+async function scansFor(list) {
+	const out = list.map((t) => {
+		const scan = covers.parseScan(t[COVER_FIELD]);
+		return scan && t.mainPid && scan.pid === String(t.mainPid) ? scan : null;
+	});
+	const missing = list.map((t, i) => (out[i] || !t.mainPid ? -1 : i)).filter(i => i !== -1);
+	if (!missing.length) return out;
+	const postData = await posts.getPostsFields(missing.map(i => list[i].mainPid), ['pid', 'content', 'sourceContent']);
+	const site = siteInfo();
+	const writes = [];
+	missing.forEach((i, n) => {
+		const p = postData[n];
+		if (!p || !p.pid) return;
+		const scan = covers.scanPost(p.sourceContent || p.content, site);
+		out[i] = scan;
+		writes.push([`topic:${list[i].tid}`, { [COVER_FIELD]: covers.serializeScan(list[i].mainPid, scan) }]);
+	});
+	if (writes.length) {
+		try {
+			await db.setObjectBulk(writes);
+		} catch (err) {
+			winston.warn(`[topic-icons] Cannot store cover scans: ${err.message}`);
+		}
+	}
+	return out;
+}
+
+/**
+ * Gives topics without thumbnails their cover (see the section comment) and sets `topicCover`
+ * { url, source: 'own'|'auto'|'category' } on every topic that shows one, for themes.
+ *
+ * @param {object} config normalised config (with `covers`)
+ * @param {Array<object>} list topic objects with `thumbs` (NodeBB's)
+ * @param {number|string} uid viewer
+ * @returns {Promise<void>}
+ */
+async function addCovers(config, list, uid) {
+	const c = config.covers;
+	const own = t => Array.isArray(t.thumbs) && t.thumbs.length > 0;
+	const candidates = list.filter(t => t && t.tid && t.cid);
+	if (!candidates.length) return;
+	const needScan = c.auto ? candidates.filter(t => !own(t)) : [];
+	const scans = needScan.length ? await scansFor(needScan) : [];
+	const scanByTid = new Map(needScan.map((t, i) => [String(t.tid), scans[i]]));
+	const site = siteInfo();
+	const guest = !isLocalUid(uid);
+	const privateUploads = meta.config.privateUploads === 1 || meta.config.privateUploads === '1';
+	candidates.forEach((t) => {
+		// Internal bookkeeping, not sent to the browser.
+		delete t[COVER_FIELD];
+		const picked = covers.pickCover(c, {
+			hasThumbs: own(t),
+			cid: t.cid,
+			scan: scanByTid.get(String(t.tid)) || null,
+			guest,
+			privateUploads,
+		});
+		if (!picked) return;
+		if (picked.source === 'own') {
+			t.topicCover = { url: t.thumbs[0].url, source: 'own' };
+			return;
+		}
+		const thumb = covers.toThumb(picked, t.tid, site);
+		t.thumbs = [thumb];
+		t.topicCover = { url: thumb.url, source: picked.source };
+	});
+}
+
+/**
+ * Keeps the stored first image of a topic in step with its first post: an edit of the first
+ * post scans the new content, so an image added or removed shows (or goes) right away.
+ *
+ * Hook: action:post.edit
+ *
+ * @param {{post: object, data: object}} hookData
+ * @returns {Promise<void>}
+ */
+plugin.onPostEdited = async function (hookData) {
+	const post = hookData && hookData.post;
+	if (!post || !post.tid || !post.topic || !post.topic.isMainPost) return;
+	try {
+		const data = hookData.data || {};
+		const content = [data.sourceContent, post.newContent, data.content, post.content].find(v => typeof v === 'string');
+		if (content === undefined) {
+			await topics.deleteTopicField(post.tid, COVER_FIELD);
+			return;
+		}
+		await topics.setTopicField(post.tid, COVER_FIELD, covers.serializeScan(post.pid, covers.scanPost(content, siteInfo())));
+	} catch (err) {
+		winston.warn(`[topic-icons] Cannot update the cover of topic ${post.tid}: ${err.message}`);
+	}
+};
+
 // ---------------------------------------------------------------- permissions
 
 /** Access checks used by lib/rules.js. */
@@ -343,7 +486,7 @@ plugin.init = async function ({ router }) {
 			.filter(name => name && !icons.EXCLUDED_GROUPS.includes(name));
 		res.render('admin/plugins/topic-icons', {
 			title: `[[${icons.ACP_NAMESPACE}:title]]`,
-			defaults: icons.defaults(),
+			defaults: Object.assign(icons.defaults(), covers.defaults()),
 			// Tree order with depth; names as plain text (public/admin.js escapes them).
 			categoryList: icons.categoryTree(cats).map(c => ({
 				cid: c.cid,
@@ -353,6 +496,9 @@ plugin.init = async function ({ router }) {
 			})),
 			groupList: groupNames,
 			maxUploadKb: Math.floor(upload.MAX_BYTES / 1024),
+			maxCoverKb: Math.floor(upload.COVER_MAX_BYTES / 1024),
+			// Cover switches as they apply now (keys never saved take their defaults).
+			coverState: covers.normalize(await meta.settings.get(SETTINGS_KEY)),
 			// The page is open to admin:settings, uploads to administrators only.
 			canUpload: await user.isAdministrator(req.uid),
 		});
@@ -368,6 +514,15 @@ plugin.init = async function ({ router }) {
 		ensureAdmin,
 		uploadMiddleware.single('file'),
 		routeHelpers.tryRoute(plugin._uploadIcon, (err, res) => res.status(400).json({ error: err.message }))
+	);
+	// Category cover upload: the same guards, with the cover types and size (lib/upload.js).
+	router.post(
+		'/api/admin/plugins/topic-icons/upload-cover',
+		middleware.ensureLoggedIn,
+		middleware.applyCSRF,
+		ensureAdmin,
+		uploadMiddleware.single('file'),
+		routeHelpers.tryRoute(plugin._uploadCover, (err, res) => res.status(400).json({ error: err.message }))
 	);
 
 	try {
@@ -403,19 +558,44 @@ function ensureAdmin(req, res, next) {
  * @returns {Promise<void>} responds with { url } or { error } (a translation token)
  */
 plugin._uploadIcon = async function (req, res) {
+	await storeUpload(req, res, { maxBytes: upload.MAX_BYTES, check: upload.checkUpload, prefix: 'ti', typeKey: 'upload-type' });
+};
+
+/**
+ * Handler of POST /api/admin/plugins/topic-icons/upload-cover (multipart, field "file"), behind
+ * ensureAdmin: a category cover (PNG, JPEG, WebP, GIF or SVG).
+ *
+ * @param {import('express').Request} req
+ * @param {import('express').Response} res
+ * @returns {Promise<void>} responds with { url } or { error } (a translation token)
+ */
+plugin._uploadCover = async function (req, res) {
+	await storeUpload(req, res, { maxBytes: upload.COVER_MAX_BYTES, check: upload.checkCoverUpload, prefix: 'tc', typeKey: 'cover-upload-type' });
+};
+
+/**
+ * Checks an ACP upload (type, content, size; SVGs without scripts) and stores it under a new
+ * unique name in the plugin's upload folder.
+ *
+ * @param {import('express').Request} req
+ * @param {import('express').Response} res
+ * @param {{maxBytes: number, check: function, prefix: string, typeKey: string}} opts
+ * @returns {Promise<void>}
+ */
+async function storeUpload(req, res, opts) {
 	const fail = (key) => {
-		const arg = key === 'upload-size' ? `, ${Math.floor(upload.MAX_BYTES / 1024)}` : '';
-		res.status(400).json({ error: `[[${icons.ACP_NAMESPACE}:${key}${arg}]]` });
+		const arg = key === 'upload-size' ? `, ${Math.floor(opts.maxBytes / 1024)}` : '';
+		res.status(400).json({ error: `[[${icons.ACP_NAMESPACE}:${key === 'upload-type' ? opts.typeKey : key}${arg}]]` });
 	};
 	const f = req.file;
 	try {
 		if (!f || !f.path) return fail('upload-missing');
-		if (f.size > upload.MAX_BYTES) return fail('upload-size');
+		if (f.size > opts.maxBytes) return fail('upload-size');
 		const content = await fs.promises.readFile(f.path);
-		const result = upload.checkUpload(f, content);
+		const result = opts.check(f, content);
 		if (result.error) return fail(result.error);
 		if (result.ext === 'svg' && !upload.isSafeSvg(content.toString('utf8'))) return fail('upload-svg-unsafe');
-		const name = upload.uniqueName(result.ext, crypto.randomBytes(8).toString('hex'));
+		const name = upload.uniqueName(result.ext, crypto.randomBytes(8).toString('hex'), undefined, opts.prefix);
 		const stored = await file.saveFileToLocal(name, UPLOAD_FOLDER, f.path);
 		res.json({ url: stored.url });
 	} finally {
@@ -423,7 +603,7 @@ plugin._uploadIcon = async function (req, res) {
 		// keeps refused uploads from piling up in the temporary folder on any version.
 		if (f && f.path) fs.promises.unlink(f.path).catch(() => {});
 	}
-};
+}
 
 /**
  * Topic whose icon the picker edits, from ?pid= (the post being edited; composer-default does not
@@ -556,15 +736,22 @@ let pendingCleanup = null;
 plugin.onSettingsSave = async function (data) {
 	if (!data || data.plugin !== SETTINGS_KEY) return data;
 	const stored = (await meta.settings.get(SETTINGS_KEY)) || {};
-	const merged = Object.assign({}, icons.defaults(), stored, data.settings || {});
+	const merged = Object.assign({}, icons.defaults(), covers.defaults(), stored, data.settings || {});
 	const chooserGroup = icons.cleanText(merged.chooserGroup, 120);
 	const groupExists = merged.chooser === 'group' && chooserGroup ? !!(await groups.exists(chooserGroup)) : undefined;
 	const { errors, settings } = icons.validateSettings(merged, { groupExists });
+	const coverResult = covers.validateSettings(merged);
+	errors.push(...coverResult.errors);
 	if (errors.length) throw new Error(errors[0]);
 	const before = icons.normalize(stored).icons;
 	const after = icons.normalize(settings).icons;
 	pendingCleanup = icons.libraryChanges(before, after);
-	data.settings = settings;
+	// Category covers that were removed or replaced: their uploaded files go too.
+	pendingCleanup.files.push(...covers.unusedFiles(
+		covers.normalize(stored).categoryCovers,
+		covers.normalize(coverResult.settings).categoryCovers
+	));
+	data.settings = Object.assign(settings, coverResult.settings);
 	return data;
 };
 
@@ -798,7 +985,8 @@ plugin.onTopicsPurge = async function (data) {
 
 /**
  * Lists of topics (category, recent, unread, popular, tags, user profile and their API routes;
- * not search results, which are posts): attaches `topicIcon` { id, name, url, isDefault, html }.
+ * not search results, which are posts): attaches `topicIcon` { id, name, url, isDefault, html }
+ * and gives topics without thumbnails their cover (addCovers).
  * The icon id is part of the topic object NodeBB has just loaded, so this costs no topic query;
  * the viewer's language comes from a short-lived cache (getLang).
  *
@@ -811,6 +999,7 @@ plugin.onTopicsGet = async function (hookData) {
 	const list = hookData && hookData.topics;
 	if (!Array.isArray(list) || !list.length) return hookData;
 	const config = await store.get();
+	await addCovers(config, list, hookData.uid);
 	if (!config.showInList || !config.icons.length) return hookData;
 	const lang = await getLang(hookData.uid);
 	await Promise.all(list.map(async (t) => {
@@ -820,7 +1009,8 @@ plugin.onTopicsGet = async function (hookData) {
 };
 
 /**
- * Topic page: attaches `topicIcon` to the topic data (public/client.js puts it in the header).
+ * Topic page: attaches `topicIcon` to the topic data (public/client.js puts it in the header) and
+ * gives a topic without thumbnails its cover (shown with NodeBB's thumbnail viewer).
  *
  * Hook: filter:topic.get
  *
@@ -831,6 +1021,7 @@ plugin.onTopicGet = async function (hookData) {
 	const t = hookData && hookData.topic;
 	if (!t || !t.cid) return hookData;
 	const config = await store.get();
+	await addCovers(config, [t], hookData.uid);
 	if (!config.showInTopic || !config.icons.length) return hookData;
 	t.topicIcon = await renderTopicIcon(config, t[TOPIC_FIELD], t.cid, await getLang(hookData.uid));
 	return hookData;
@@ -838,7 +1029,8 @@ plugin.onTopicGet = async function (hookData) {
 
 /**
  * Last pass before render or JSON, on full page loads and on the /api routes used by ajaxify:
- * icons in the language of the request (?lang=, browser language of guests, user setting).
+ * icons in the language of the request (?lang=, browser language of guests, user setting), and
+ * the body classes that switch on the cover styles (scss/topic-icons.scss).
  *
  * Hook: filter:middleware.render (priority 20)
  *
@@ -848,6 +1040,10 @@ plugin.onTopicGet = async function (hookData) {
 plugin.onRender = async function (hookData) {
 	const { req, res, templateData } = hookData;
 	if (!templateData) return hookData;
+	const coverClasses = covers.bodyClasses((await store.get()).covers);
+	if (coverClasses.length && typeof templateData.bodyClass === 'string') {
+		templateData.bodyClass = `${templateData.bodyClass} ${coverClasses.join(' ')}`.trim();
+	}
 	const list = Array.isArray(templateData.topics) ? templateData.topics.filter(t => t && t.topicIcon) : [];
 	if (!list.length && !templateData.topicIcon) return hookData;
 	const lang = await viewerLang(req, res);

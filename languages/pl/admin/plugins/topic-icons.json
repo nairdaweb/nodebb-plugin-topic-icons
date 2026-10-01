@@ -18,6 +18,18 @@
 	"default-none": "Brak",
 	"default-inherit": "Domyślna całego forum",
 
+	"covers": "Okładki tematów",
+	"covers-help": "Temat bez własnej miniatury może pokazać pierwsze zdjęcie z pierwszego posta albo domyślną okładkę kategorii, w tej kolejności. Okładki są dodawane przy wyświetlaniu, a nie zapisywane w tematach: zmiana okładki kategorii działa od razu wszędzie, a temat, z którego usunięto zdjęcie, od razu je traci. Tematy z miniaturami dodanymi przez autorów zachowują je.",
+	"cover-category": "Pokazuj domyślną okładkę kategorii przy tematach bez okładki",
+	"cover-auto": "Używaj pierwszego zdjęcia z pierwszego posta jako okładki",
+	"cover-external": "Używaj też obrazków z innych serwisów (http/https)",
+	"cover-external-help": "Wyłączone: tylko obrazki wgrane na to forum. Włączone: przeglądarka każdego odwiedzającego pobiera obrazek z tamtego serwisu, który widzi wtedy jego adres IP, a obrazek może tam zniknąć albo się zmienić.",
+	"cover-style": "Jednolity kadr miniatur tematów (przycięcie do proporcji poniżej, zaokrąglone rogi)",
+	"cover-phones": "Pokazuj miniatury na listach tematów także na telefonach",
+	"cover-ratio": "Proporcje miniatur",
+	"cover-ratio-4-3": "4:3",
+	"cover-ratio-square": "Kwadrat",
+
 	"library": "Biblioteka ikon",
 	"library-help": "Kolejność jest kolejnością w oknie wyboru. Ikona bez przypisanych kategorii jest dostępna wszędzie; temat przeniesiony do kategorii, w której jego ikona nie jest dostępna, traci ją. Wyłączona ikona znika z wyboru, ale tematy, które już ją mają, zachowują ją. Usunięta ikona znika z tematów po zapisaniu (zamiast niej pokazuje się domyślna kategorii), a jej wgrany obrazek jest kasowany. Obrazki: PNG, WebP albo SVG, do %1 KB; najlepiej kwadratowe, co najmniej 64×64 px. Obrazki z innych serwisów (https) każda przeglądarka odwiedzającego pobiera z tamtego serwisu.",
 	"add-icon": "Dodaj ikonę",
@@ -35,10 +47,14 @@
 	"upload": "Wgraj obrazek",
 	"empty-library": "Biblioteka jest pusta. Dodaj ikonę albo przywróć wbudowane.",
 
-	"category-defaults": "Domyślne ikony kategorii",
+	"category-defaults": "Domyślne ikony i okładki kategorii",
 	"category-defaults-help": "Ikona pokazywana przy tematach w kategorii, gdy autor żadnej nie wybrał.",
 	"col-category": "Kategoria",
 	"col-default": "Domyślna ikona",
+	"category-covers-help": "Domyślna okładka jest pokazywana przy tematach bez miniatury i bez zdjęcia w pierwszym poście. Obrazki: PNG, JPEG, WebP, GIF albo SVG, do %1 KB, albo ścieżka w serwisie / adres https; najlepiej poziome, co najmniej 640×480 px.",
+	"col-cover": "Domyślna okładka",
+	"cover-upload": "Wgraj okładkę",
+	"cover-clear": "Usuń okładkę",
 
 	"confirm-remove": "Usunąć ikonę „%1”? Po zapisaniu tematy, które jej używają, stracą ją (pokażą domyślną ikonę kategorii), a jej wgrany obrazek zostanie skasowany.",
 	"confirm-restore": "Dodać do biblioteki brakujące wbudowane ikony?",
@@ -51,8 +67,9 @@
 	"upload-type": "Dozwolone są tylko obrazki PNG, WebP i SVG, a zawartość musi pasować do rozszerzenia.",
 	"upload-size": "Obrazek jest za duży (najwyżej %1 KB).",
 	"upload-missing": "Nie otrzymano pliku.",
-	"upload-forbidden": "Tylko administratorzy mogą wgrywać ikony.",
+	"upload-forbidden": "Tylko administratorzy mogą wgrywać obrazki.",
 	"upload-svg-unsafe": "Ten plik SVG zawiera skrypty, obsługę zdarzeń albo zewnętrzne odnośniki i został odrzucony.",
+	"cover-upload-type": "Akceptowane są tylko obrazki PNG, JPEG, WebP, GIF i SVG, a zawartość musi pasować do rozszerzenia pliku.",
 
 	"error.icons-json": "Biblioteka ikon nie jest poprawnym JSON-em.",
 	"error.row-invalid": "Ikona %1: niepoprawny wpis.",
@@ -69,6 +86,9 @@
 	"error.default-unknown": "Domyślnej ikony forum nie ma w bibliotece.",
 	"error.category-defaults": "Domyślne ikony kategorii nie są poprawnym JSON-em.",
 	"error.category-default-unknown": "Domyślnej ikony kategorii %1 nie ma w bibliotece.",
+	"error.cover-ratio": "Nieznane proporcje miniatur.",
+	"error.category-covers": "Okładki kategorii nie są poprawnym JSON-em.",
+	"error.category-cover-url": "Kategoria %1: okładka musi być ścieżką w serwisie (/…) albo adresem https zakończonym na .png, .jpg, .jpeg, .webp, .gif lub .svg.",
 
 	"checks": "Do poprawienia"
 }

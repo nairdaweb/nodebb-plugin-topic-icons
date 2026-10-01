@@ -2,9 +2,9 @@
 	ACP page of nodebb-plugin-topic-icons, rendered by the route in library.js (init).
 	Behaviour lives in public/admin.js; strings come from
 	languages/<lang>/admin/plugins/topic-icons.json. Fields with a name attribute are saved by
-	NodeBB's settings module under the "topic-icons" hash; the library, the category defaults and
-	the forum-wide default are kept in the hidden inputs at the bottom and validated on the server
-	by lib/icons.js.
+	NodeBB's settings module under the "topic-icons" hash; the library, the category defaults, the
+	category covers and the forum-wide default are kept in the hidden inputs at the bottom and
+	validated on the server by lib/icons.js and lib/covers.js.
 -->
 <div class="acp-page-container">
 	<!-- IMPORT admin/partials/settings/header.tpl -->
@@ -67,11 +67,44 @@
 				</div>
 
 				<div>
+					<h5>{{tx("admin/plugins/topic-icons:covers")}}</h5>
+					<p class="form-text">{{tx("admin/plugins/topic-icons:covers-help")}}</p>
+					<div class="d-flex flex-column gap-2 mb-3">
+						<div class="form-check form-switch">
+							<input type="checkbox" class="form-check-input" id="ti-coverCategory" name="coverCategory">
+							<label class="form-check-label" for="ti-coverCategory">{{tx("admin/plugins/topic-icons:cover-category")}}</label>
+						</div>
+						<div class="form-check form-switch">
+							<input type="checkbox" class="form-check-input" id="ti-coverAuto" name="coverAuto">
+							<label class="form-check-label" for="ti-coverAuto">{{tx("admin/plugins/topic-icons:cover-auto")}}</label>
+						</div>
+						<div class="form-check form-switch ms-4">
+							<input type="checkbox" class="form-check-input" id="ti-coverExternal" name="coverExternal">
+							<label class="form-check-label" for="ti-coverExternal">{{tx("admin/plugins/topic-icons:cover-external")}}</label>
+							<p class="form-text mb-0">{{tx("admin/plugins/topic-icons:cover-external-help")}}</p>
+						</div>
+						<div class="form-check form-switch">
+							<input type="checkbox" class="form-check-input" id="ti-coverStyle" name="coverStyle">
+							<label class="form-check-label" for="ti-coverStyle">{{tx("admin/plugins/topic-icons:cover-style")}}</label>
+						</div>
+						<div class="form-check form-switch ms-4">
+							<input type="checkbox" class="form-check-input" id="ti-coverPhones" name="coverPhones">
+							<label class="form-check-label" for="ti-coverPhones">{{tx("admin/plugins/topic-icons:cover-phones")}}</label>
+						</div>
+					</div>
+					<label class="form-label fw-semibold" for="ti-coverRatio">{{tx("admin/plugins/topic-icons:cover-ratio")}}</label>
+					<select class="form-select" id="ti-coverRatio" name="coverRatio" style="max-width:24rem">
+						<option value="4-3">{{tx("admin/plugins/topic-icons:cover-ratio-4-3")}}</option>
+						<option value="square">{{tx("admin/plugins/topic-icons:cover-ratio-square")}}</option>
+					</select>
+				</div>
+
+				<div>
 					<h5>{{tx("admin/plugins/topic-icons:category-defaults")}}</h5>
-					<p class="form-text">{{tx("admin/plugins/topic-icons:category-defaults-help")}}</p>
+					<p class="form-text">{{tx("admin/plugins/topic-icons:category-defaults-help")}} {{tx("admin/plugins/topic-icons:category-covers-help", maxCoverKb)}}</p>
 					<div class="table-responsive">
 						<table class="table table-sm align-middle" id="ti-cat-defaults">
-							<thead><tr><th>{{tx("admin/plugins/topic-icons:col-category")}}</th><th>{{tx("admin/plugins/topic-icons:col-default")}}</th></tr></thead>
+							<thead><tr><th>{{tx("admin/plugins/topic-icons:col-category")}}</th><th>{{tx("admin/plugins/topic-icons:col-default")}}</th><th>{{tx("admin/plugins/topic-icons:col-cover")}}</th></tr></thead>
 							<tbody></tbody>
 						</table>
 					</div>
@@ -86,6 +119,7 @@
 				<!-- Filled by public/admin.js (syncHidden) before each save. -->
 				<input type="hidden" name="icons" id="ti-icons-json">
 				<input type="hidden" name="categoryDefaults" id="ti-cat-json">
+				<input type="hidden" name="categoryCovers" id="ti-covers-json">
 				<input type="hidden" name="defaultIcon" id="ti-default">
 				<input type="hidden" name="chooserGroup" id="ti-group">
 			</form>

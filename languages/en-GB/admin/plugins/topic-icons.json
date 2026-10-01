@@ -18,6 +18,18 @@
 	"default-none": "None",
 	"default-inherit": "Forum-wide default",
 
+	"covers": "Topic covers",
+	"covers-help": "A topic without its own thumbnail can show the first image of its first post or the default cover of its category, in that order. Covers are added when topics are shown, not saved in them: changing a category cover takes effect everywhere at once, and a topic whose image is edited out loses it right away. Topics with thumbnails added by their authors keep them.",
+	"cover-category": "Show the category's default cover on topics without one",
+	"cover-auto": "Use the first image of the first post as the cover",
+	"cover-external": "Also use images from other sites (http/https)",
+	"cover-external-help": "Off: only images uploaded to this forum are used. On: every visitor's browser loads the image from the other site, which then sees their IP address, and the image may disappear or change there.",
+	"cover-style": "Uniform frame for topic thumbnails (cropped to the ratio below, rounded corners)",
+	"cover-phones": "Show thumbnails in topic lists on phones as well",
+	"cover-ratio": "Thumbnail ratio",
+	"cover-ratio-4-3": "4:3",
+	"cover-ratio-square": "Square",
+
 	"library": "Icon library",
 	"library-help": "Order is the order in the picker. An icon limited to no category is offered everywhere; a topic moved to a category where its icon is not available loses it. Switched-off icons are no longer offered, but topics that already use them keep them. Removing an icon takes it off its topics when you save (the category default is shown instead) and deletes its uploaded image. Images: PNG, WebP or SVG, up to %1 KB; square images of 64×64 px or more look best. Images from other sites (https) are loaded by every visitor's browser from that site.",
 	"add-icon": "Add icon",
@@ -39,6 +51,10 @@
 	"category-defaults-help": "Icon shown for topics in a category when the author did not pick one.",
 	"col-category": "Category",
 	"col-default": "Default icon",
+	"category-covers-help": "The default cover is shown on topics without a thumbnail and without an image in the first post. Images: PNG, JPEG, WebP, GIF or SVG, up to %1 KB, or a site path / https URL; landscape images of 640×480 px or more look best.",
+	"col-cover": "Default cover",
+	"cover-upload": "Upload cover",
+	"cover-clear": "Remove cover",
 
 	"confirm-remove": "Remove the icon “%1”? When you save, topics that use it lose it (the category default is shown instead) and its uploaded image is deleted.",
 	"confirm-restore": "Add the built-in icons that are missing from the library?",
@@ -51,8 +67,9 @@
 	"upload-type": "Only PNG, WebP and SVG images are accepted, and the content must match the file extension.",
 	"upload-size": "The image is too large (at most %1 KB).",
 	"upload-missing": "No file was received.",
-	"upload-forbidden": "Only administrators can upload icons.",
+	"upload-forbidden": "Only administrators can upload images.",
 	"upload-svg-unsafe": "This SVG contains scripts, event handlers or external links and was refused.",
+	"cover-upload-type": "Only PNG, JPEG, WebP, GIF and SVG images are accepted, and the content must match the file extension.",
 
 	"error.icons-json": "The icon library is not valid JSON.",
 	"error.row-invalid": "Icon %1: invalid entry.",
@@ -69,6 +86,9 @@
 	"error.default-unknown": "The forum-wide default icon is not in the library.",
 	"error.category-defaults": "The category defaults are not valid JSON.",
 	"error.category-default-unknown": "The default icon of category %1 is not in the library.",
+	"error.cover-ratio": "Unknown thumbnail ratio.",
+	"error.category-covers": "The category covers are not valid JSON.",
+	"error.category-cover-url": "Category %1: the cover must be a site path (/…) or an https URL ending in .png, .jpg, .jpeg, .webp, .gif or .svg.",
 
 	"checks": "Problems to fix"
 }

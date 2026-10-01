@@ -1,9 +1,15 @@
-// nodebb-plugin-topic-icons: icon, composer button and picker styles.
+// nodebb-plugin-topic-icons: icon, composer button, picker and topic cover styles.
 // Every size is a custom property, so themes can change them without overriding rules:
 //   --topic-icon-size        icon in topic lists (40px, 32px on phones)
 //   --topic-icon-size-header icon in the topic header
 //   --topic-icon-size-inline icon put in front of a title by public/client.js
 //   --topic-icon-radius      corner radius
+// Topic covers (thumbnails in topic lists and the topic header, see "Topic covers" below):
+//   --topic-cover-width        width in topic lists (5.33rem, 4rem on phones)
+//   --topic-cover-width-header width in the topic header
+//   --topic-cover-radius       corner radius
+//   --topic-cover-bg           background while loading and behind transparent images
+//   --topic-cover-border       hairline around the image
 
 :root {
 	--topic-icon-size: 40px;
@@ -190,6 +196,98 @@
 // ACP category table: indentation by depth in the category tree.
 .topic-icons-acp__cat {
 	padding-inline-start: calc(var(--ti-depth, 0) * 1.25rem);
+}
+
+// ACP category covers.
+.topic-icons-acp__cover {
+	flex-shrink: 0;
+	width: 64px;
+	height: 48px;
+	object-fit: cover;
+	border-radius: 0.375rem;
+	background: var(--bs-tertiary-bg);
+}
+
+// Topic covers: one frame for every topic thumbnail (NodeBB's own and the covers added by the
+// plugin), switched on by body classes that library.js adds when "Uniform frame" is on
+// (lib/covers.js bodyClasses). Selectors follow NodeBB's thumbnail markup (Harmony and themes
+// based on it); the inline sizes of that markup need !important.
+:root {
+	--topic-cover-width: 5.33rem;
+	--topic-cover-width-header: 6.5rem;
+	--topic-cover-radius: var(--bs-border-radius, 0.375rem);
+	--topic-cover-bg: var(--bs-tertiary-bg);
+	--topic-cover-border: var(--bs-border-color-translucent);
+}
+
+@media (max-width: 575.98px) {
+	:root {
+		--topic-cover-width: 4rem;
+		--topic-cover-width-header: 5rem;
+	}
+}
+
+.topic-covers {
+	--topic-cover-ratio: 4 / 3;
+}
+
+.topic-covers--square {
+	--topic-cover-ratio: 1 / 1;
+}
+
+.topic-covers {
+	.topic-thumbs .topic-thumb,
+	[component="topic/thumb/list"] > a > img {
+		display: block;
+		width: var(--topic-cover-width) !important;
+		max-width: none !important;
+		height: auto !important;
+		aspect-ratio: var(--topic-cover-ratio);
+		object-fit: cover !important;
+		border-radius: var(--topic-cover-radius) !important;
+		background: var(--topic-cover-bg) !important;
+		outline: 1px solid var(--topic-cover-border);
+		outline-offset: -1px;
+	}
+
+	[component="topic/thumb/list"] > a > img {
+		width: var(--topic-cover-width-header) !important;
+	}
+
+	.topic-thumbs,
+	[component="topic/thumb/list"] > a {
+		border-radius: var(--topic-cover-radius);
+
+		&:focus-visible {
+			outline: 2px solid var(--bs-primary);
+			outline-offset: 2px;
+		}
+	}
+
+	// A single picture needs no counter.
+	.topic-thumbs [data-numthumbs="1"] {
+		display: none !important;
+	}
+}
+
+// Thumbnails in topic lists on phones and tablets too (NodeBB's markup shows them from 1200px).
+@media (max-width: 1199.98px) {
+	.topic-covers--phones .topic-thumbs.d-none {
+		display: block !important;
+		align-self: flex-start;
+	}
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	.topic-covers [component="topic/thumb/list"] > a > img,
+	.topic-covers .topic-thumbs .topic-thumb {
+		transition: opacity 0.15s;
+	}
+
+	.topic-covers [component="topic/thumb/list"] > a:hover > img,
+	.topic-covers .topic-thumbs:hover .topic-thumb {
+		opacity: 0.85;
+	}
 }
 
 @media (forced-colors: active) {

@@ -14,6 +14,8 @@
  *    {{./topicIcon.html}} themselves are left alone.
  * 3. Topic lists loaded from routes that do not know the viewer's language (e.g. infinite scroll
  *    of guests) get their icons again in the viewer's language.
+ * 4. Topic thumbnails (NodeBB's and the covers added by the server) get the topic title as their
+ *    alt text and are decoded asynchronously.
  *
  * Icon names are inserted with textContent or come escaped from the server, so no text typed by
  * an admin is ever parsed as HTML or as a translation token. Escaped text is decoded with
@@ -602,16 +604,44 @@
 		title.before(wrap);
 	}
 
+	/**
+	 * Gives topic thumbnails the topic title as alt text (themes based on Harmony print alt="").
+	 * The title is set as text through the DOM, never parsed as HTML.
+	 *
+	 * @returns {void}
+	 */
+	function describeThumbs() {
+		document.querySelectorAll('[component="category/topic"][data-tid]').forEach(function (li) {
+			const img = li.querySelector('.topic-thumbs img');
+			if (!img || img.getAttribute('alt')) return;
+			const link = li.querySelector('[component="topic/header"] a');
+			const title = link ? link.textContent.trim() : '';
+			if (title) img.alt = title;
+			img.decoding = 'async';
+		});
+		const data = window.ajaxify && ajaxify.data;
+		const title = data && data.tid && (data.titleRaw || data.title);
+		if (!title) return;
+		require(['topic-icons/icons'], function (I) {
+			document.querySelectorAll('[component="topic/thumb/list"] img').forEach(function (img) {
+				if (!img.getAttribute('alt')) img.alt = I.decodeEntities(String(title));
+				img.decoding = 'async';
+			});
+		});
+	}
+
 	if (window.jQuery) {
 		const $w = window.jQuery(window);
 		$w.on('action:ajaxify.end', function () {
 			decorateList(window.ajaxify && ajaxify.data && ajaxify.data.topics);
 			decorateTopic();
 			relocalizeList();
+			describeThumbs();
 		});
 		$w.on('action:topics.loaded', function (ev, data) {
 			decorateList(data && data.topics);
 			relocalizeList();
+			describeThumbs();
 		});
 		$w.on('action:composer.changeCategory', function (ev, data) {
 			if (data && data.postData && data.postData.topicIcons) refresh(data.postData);

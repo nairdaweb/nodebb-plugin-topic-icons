@@ -14,11 +14,12 @@ const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0
 const WEBP = Buffer.concat([Buffer.from('RIFF'), Buffer.from([1, 0, 0, 0]), Buffer.from('WEBPVP8 ')]);
 const SVG = Buffer.from('﻿<?xml version="1.0"?>\n<!-- icon --><!DOCTYPE svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><use href="#a"/></svg>');
 
-test('sniffType recognises PNG, WebP and SVG by content', () => {
+test('sniffType recognises PNG, WebP, JPEG, GIF and SVG by content', () => {
 	assert.equal(U.sniffType(PNG), 'png');
 	assert.equal(U.sniffType(WEBP), 'webp');
 	assert.equal(U.sniffType(SVG), 'svg');
-	assert.equal(U.sniffType(Buffer.from('GIF89a')), '');
+	assert.equal(U.sniffType(Buffer.from('GIF89a')), 'gif');
+	assert.equal(U.sniffType(Buffer.from('GIF90a')), '');
 	assert.equal(U.sniffType(Buffer.from('<html><svg></svg>')), '');
 	assert.equal(U.sniffType(Buffer.alloc(0)), '');
 });
