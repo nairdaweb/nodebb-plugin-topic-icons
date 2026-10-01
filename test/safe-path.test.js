@@ -1,63 +1,36 @@
 'use strict';
 
 /*
- * Unit tests for lib/safe-path.js: temporary upload paths (inside the allowed folder, no "..",
- * no symbolic links, regular files only) and plain file names inside a folder.
+ * Unit tests for lib/safe-path.js: multer's temporary file names, rebuilt upload paths and plain
+ * file names inside a folder.
  */
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('fs');
+const crypto = require('crypto');
 const os = require('os');
 const path = require('path');
 
-const { tempUploadPath, fileInFolder, isInside } = require('../lib/safe-path');
+const { MULTER_NAME, fileInFolder, isInside } = require('../lib/safe-path');
 
-test('tempUploadPath accepts a regular file inside the allowed folder', async (t) => {
-	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ti-safe-'));
-	t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-	const root = path.join(dir, 'uploads');
-	const outside = path.join(dir, 'outside');
-	fs.mkdirSync(root);
-	fs.mkdirSync(outside);
-	const good = path.join(root, '3f2a9c');
-	fs.writeFileSync(good, 'x');
-	const secret = path.join(outside, 'secret');
-	fs.writeFileSync(secret, 'x');
-
-	assert.equal(await tempUploadPath(good, [root]), fs.realpathSync(good));
-	// Default root: the system temporary folder (where multer stores uploads).
-	assert.equal(await tempUploadPath(good), fs.realpathSync(good));
-
-	// Outside the allowed folder, through "..", missing, a folder, odd values.
-	assert.equal(await tempUploadPath(secret, [root]), null);
-	assert.equal(await tempUploadPath(path.join(root, '..', 'outside', 'secret'), [root]), null);
-	assert.equal(await tempUploadPath(`${root}/../outside/secret`, [root]), null);
-	assert.equal(await tempUploadPath(path.join(root, 'missing'), [root]), null);
-	assert.equal(await tempUploadPath(root, [dir]), null);
-	assert.equal(await tempUploadPath(root, [root]), null);
-	assert.equal(await tempUploadPath(`${good}\0`, [root]), null);
-	for (const bad of [undefined, null, '', 42, {}, 'x'.repeat(5000)]) {
-		assert.equal(await tempUploadPath(bad, [root]), null);
-	}
-	// A root that does not exist allows nothing.
-	assert.equal(await tempUploadPath(good, [path.join(dir, 'nope')]), null);
+test('MULTER_NAME matches the temporary names of multer only', () => {
+	// multer's disk storage: crypto.randomBytes(16).toString('hex').
+	for (let i = 0; i < 20; i += 1) assert.ok(MULTER_NAME.test(crypto.randomBytes(16).toString('hex')));
+	['', 'abc', 'A'.repeat(32), 'g'.repeat(32), 'a'.repeat(31), 'a'.repeat(33), `${'a'.repeat(32)}.png`,
+		`../${'a'.repeat(32)}`, `${'a'.repeat(32)}\n`, '..', '/etc/passwd']
+		.forEach(name => assert.equal(MULTER_NAME.test(name), false, name));
 });
 
-test('tempUploadPath refuses symbolic links, also through a linked folder', async (t) => {
-	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ti-safe-'));
-	t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-	const root = path.join(dir, 'uploads');
-	const outside = path.join(dir, 'outside');
-	fs.mkdirSync(root);
-	fs.mkdirSync(outside);
-	const secret = path.join(outside, 'secret');
-	fs.writeFileSync(secret, 'x');
-	fs.symlinkSync(secret, path.join(root, 'link'));
-	fs.symlinkSync(outside, path.join(root, 'linkdir'));
-
-	assert.equal(await tempUploadPath(path.join(root, 'link'), [root]), null);
-	assert.equal(await tempUploadPath(path.join(root, 'linkdir', 'secret'), [root]), null);
+test('rebuilding the temporary path keeps only the file name', () => {
+	const tmp = path.resolve(os.tmpdir());
+	const name = crypto.randomBytes(16).toString('hex');
+	for (const given of [path.join(tmp, name), `/elsewhere/${name}`, `${tmp}/../x/${name}`]) {
+		const rebuilt = path.join(tmp, path.basename(given));
+		assert.equal(rebuilt, path.join(tmp, name));
+		assert.ok(path.resolve(rebuilt).startsWith(tmp + path.sep));
+	}
+	assert.equal(path.basename('/x/..'), '..');
+	assert.equal(MULTER_NAME.test(path.basename('/x/..')), false);
 });
 
 test('fileInFolder allows plain file names only', () => {

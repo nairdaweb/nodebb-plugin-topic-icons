@@ -3,6 +3,16 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [1.1.2] - 2026-10-01
+
+### Security
+- Use express-rate-limit and rebuild upload paths from a fixed directory. Request limits are
+  unchanged (20 uploads, 60 ACP page loads and 300 API requests per minute per user, guests per IP
+  address, IPv6 grouped by /56) and now come from `express-rate-limit` (new dependency), which
+  replaces `lib/ratelimit.js`. The path of an uploaded file is rebuilt from the system temporary
+  folder fixed at start-up and the bare file name, which must be a multer name (32 hex digits); it
+  must still be a regular file and not a symbolic link.
+
 ## [1.1.1] - 2026-10-01
 
 ### Security

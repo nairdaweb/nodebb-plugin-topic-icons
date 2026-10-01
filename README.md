@@ -225,8 +225,9 @@ const icons = await topicIcons.getTopicIcons([1, 2, 3], { lang: 'pl' });
 - `POST /api/admin/plugins/topic-icons/upload` — ACP icon upload, administrators only, CSRF token required.
 - `POST /api/admin/plugins/topic-icons/upload-cover` — ACP category cover upload, same rules.
 
-Requests are limited per user (guests: per IP address) in each NodeBB process: 20 uploads, 60 ACP
-page loads and 300 API requests per minute; above that the answer is `429`.
+Requests are limited per user (guests: per IP address) in each NodeBB process with
+`express-rate-limit`: 20 uploads, 60 ACP page loads and 300 API requests per minute; above that the
+answer is `429`.
 
 ## Security notes
 

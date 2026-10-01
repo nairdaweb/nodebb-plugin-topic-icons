@@ -24,7 +24,9 @@
 
 const crypto = require('crypto');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
+const { rateLimit } = require('express-rate-limit');
 
 const nconf = require.main.require('nconf');
 const winston = require.main.require('winston');
@@ -53,8 +55,8 @@ const rules = require('./lib/rules');
 const upload = require('./lib/upload');
 const LRU = require('./lib/lru');
 const ConfigStore = require('./lib/config-store');
-const { createLimiter } = require('./lib/ratelimit');
-const { tempUploadPath, fileInFolder } = require('./lib/safe-path');
+const { BASE_OPTIONS: RATE_LIMIT, onPageLimit } = require('./lib/rate-limit');
+const { fileInFolder, MULTER_NAME } = require('./lib/safe-path');
 const { pickLang, isLangCode } = require('./lib/lang');
 
 const { isLocalUid } = rules;
@@ -540,22 +542,29 @@ plugin.init = async function ({ router }) {
 };
 
 /*
- * Request limits per user (guests: per IP address), counted in memory by each NodeBB process
- * (lib/ratelimit.js). Generous for normal use; they only stop scripted floods.
+ * Request limits per user (guests: per IP address) per minute, with express-rate-limit
+ * (lib/rate-limit.js). Generous for normal use; they only stop scripted floods.
  */
 const limits = {
-	adminPage: createLimiter({ windowMs: 60 * 1000, max: 60 }),
-	upload: createLimiter({
-		windowMs: 60 * 1000,
-		max: 20,
-		onLimit: (req, res) => res.status(429).json({ error: `[[${icons.ACP_NAMESPACE}:upload-rate-limit]]` }),
+	adminPage: rateLimit({ ...RATE_LIMIT, limit: 60, handler: onPageLimit }),
+	upload: rateLimit({
+		...RATE_LIMIT,
+		limit: 20,
+		handler: (req, res) => res.status(429).json({ error: `[[${icons.ACP_NAMESPACE}:upload-rate-limit]]` }),
 	}),
-	api: createLimiter({
-		windowMs: 60 * 1000,
-		max: 300,
-		onLimit: (req, res) => controllerHelpers.formatApiResponse(429, res),
+	api: rateLimit({
+		...RATE_LIMIT,
+		limit: 300,
+		handler: (req, res) => controllerHelpers.formatApiResponse(429, res),
 	}),
 };
+
+/*
+ * Folder where NodeBB's multer middleware (disk storage without a destination) writes uploads:
+ * the system temporary folder, fixed when the plugin loads. Temporary paths are rebuilt from this
+ * folder and multer's file name, never taken from the request as they are.
+ */
+const TEMP_DIR = path.resolve(os.tmpdir());
 
 /**
  * Refuses the upload route to everyone but administrators, before the body is read.
@@ -611,16 +620,25 @@ async function storeUpload(req, res, opts) {
 		res.status(400).json({ error: `[[${icons.ACP_NAMESPACE}:${key === 'upload-type' ? opts.typeKey : key}${arg}]]` });
 	};
 	const f = req.file;
-	// Only multer's temporary file is read, copied and deleted: a regular file inside the
-	// system temporary folder, never a symbolic link (lib/safe-path.js).
+	// Only multer's temporary file is read, copied and deleted. Its path is rebuilt from the fixed
+	// temporary folder and the bare file name, which must look like a multer name (32 hex digits);
+	// the file must be a regular file there, never a symbolic link.
 	let tempPath = null;
 	try {
 		if (!f || !f.path) return fail('upload-missing');
-		tempPath = await tempUploadPath(f.path);
-		if (!tempPath) {
+		const tempName = path.basename(String(f.path));
+		const candidate = path.join(TEMP_DIR, tempName);
+		if (!MULTER_NAME.test(tempName) || !path.resolve(candidate).startsWith(TEMP_DIR + path.sep) ||
+			path.resolve(String(f.path)) !== candidate) {
 			winston.warn('[topic-icons] Upload refused: the temporary file is not in the temporary folder');
 			return fail('upload-missing');
 		}
+		const stat = await fs.promises.lstat(candidate).catch(() => null);
+		if (!stat || stat.isSymbolicLink() || !stat.isFile()) {
+			winston.warn('[topic-icons] Upload refused: the temporary file is not a regular file');
+			return fail('upload-missing');
+		}
+		tempPath = candidate;
 		if (f.size > opts.maxBytes) return fail('upload-size');
 		const content = await fs.promises.readFile(tempPath);
 		const result = opts.check(f, content);
