@@ -91,5 +91,11 @@
 	"error.category-covers": "The category covers are not valid JSON.",
 	"error.category-cover-url": "Category %1: the cover must be a site path (/…) or an https URL ending in .png, .jpg, .jpeg, .webp, .gif or .svg.",
 
-	"checks": "Problems to fix"
+	"checks": "Problems to fix",
+	"update.available": "Version %1 is available",
+	"update.notes": "what's new",
+	"update.private": "update it with the deployment script",
+	"update.check": "Check for updates",
+	"update.check-help": "Once a day the forum fetches the latest version number of this plugin from updates.wirelab.pl: a plain GET request, nothing about the forum is sent. When this is off, no requests are made.",
+	"update.saved": "Update check setting saved"
 }

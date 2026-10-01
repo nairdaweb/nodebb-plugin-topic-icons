@@ -258,6 +258,20 @@ en-GB and pl are included; other languages fall back to en-GB. Strings live in
 (ACP); pull requests with new languages are welcome. Names typed in the ACP are the same in every
 language; built-in icons without a typed name use the language files.
 
+## Update notices
+
+Once a day the plugin asks [updates.wirelab.pl](https://updates.wirelab.pl) whether a newer version
+exists, and shows "Version X is available — what's new" on its ACP page when it does.
+
+- **What is sent:** nothing beyond a plain `GET https://updates.wirelab.pl/api/nodebb-plugin-topic-icons.json`. No
+  query string, no cookies, no forum URL, user or usage data. The `User-Agent` header is
+  `nodebb-plugin-topic-icons/<installed version>`. As with any web request, the server (GitHub Pages) sees the
+  forum server's IP address.
+- **How often:** at most once a day, in the background and when the ACP page is opened (from a cache
+  kept in the database). 5 s timeout; network errors are logged at verbose level only.
+- **Switching it off:** ACP → Plugins → this plugin → "Check for updates". When it is off, no request
+  is made at all.
+
 ## Development
 
 ```sh

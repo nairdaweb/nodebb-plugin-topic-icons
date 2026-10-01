@@ -3,6 +3,18 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - 2026-10-01
+
+### Added
+- Update notices on the ACP page: "Version X is available — what's new", linking to the release notes. The plugin fetches
+  `https://updates.wirelab.pl/api/nodebb-plugin-topic-icons.json` at most once a day (in the background and when the
+  ACP page is opened, from a cache kept in the database; an hour after a failed attempt) with a plain
+  `GET`: no query string, no cookies, no data about the forum, `User-Agent: nodebb-plugin-topic-icons/<version>`,
+  5 s timeout. Network errors are logged at verbose level only.
+- "Check for updates" switch on the ACP page, on by default, saved on its own (settings hash
+  `topic-icons-update-check`). When it is off, no request is made at all.
+- `lib/update-check.js`, shared by the wirelab plugins; no new dependencies.
+
 ## [1.1.2] - 2026-10-01
 
 ### Security

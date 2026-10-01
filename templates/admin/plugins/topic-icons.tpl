@@ -9,6 +9,17 @@
 <div class="acp-page-container">
 	<!-- IMPORT admin/partials/settings/header.tpl -->
 
+	{{{ if updateAvailable }}}
+	<div class="alert alert-info" role="status">
+		<span>{{tx("admin/plugins/topic-icons:update.available", updateVersion)}}</span>
+		{{{ if updateIsPrivate }}}
+		<span>— {{tx("admin/plugins/topic-icons:update.private")}}</span>
+		{{{ else }}}{{{ if updateNotesUrl }}}
+		<span>— <a href="{updateNotesUrl}" target="_blank" rel="noopener noreferrer">{{tx("admin/plugins/topic-icons:update.notes")}}</a></span>
+		{{{ end }}}{{{ end }}}
+	</div>
+	{{{ end }}}
+
 	<div class="row m-0">
 		<div id="spy-container" class="col-12 px-0 mb-4" tabindex="0">
 			<form role="form" class="topic-icons-settings d-flex flex-column gap-4">
@@ -124,5 +135,15 @@
 				<input type="hidden" name="chooserGroup" id="ti-group">
 			</form>
 		</div>
+	</div>
+	<!-- "Check for updates" (lib/update-check.js), own settings hash, saved on change by public/admin.js -->
+	<div class="row m-0">
+		<form role="form" class="wl-update-check col-12 px-0 mb-4 pt-3 border-top" data-hash="{updateSettingsHash}">
+			<div class="form-check form-switch mb-1">
+				<input type="checkbox" class="form-check-input" id="ti-check-updates" name="checkUpdates" checked aria-describedby="ti-check-updates-help">
+				<label for="ti-check-updates" class="form-check-label">{{tx("admin/plugins/topic-icons:update.check")}}</label>
+			</div>
+			<p class="form-text" id="ti-check-updates-help">{{tx("admin/plugins/topic-icons:update.check-help")}}</p>
+		</form>
 	</div>
 </div>

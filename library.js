@@ -57,12 +57,21 @@ const LRU = require('./lib/lru');
 const ConfigStore = require('./lib/config-store');
 const { BASE_OPTIONS: RATE_LIMIT, onPageLimit } = require('./lib/rate-limit');
 const { fileInFolder, MULTER_NAME } = require('./lib/safe-path');
+const updateCheck = require('./lib/update-check');
 const { pickLang, isLangCode } = require('./lib/lang');
 
 const { isLocalUid } = rules;
 
 /** Hash under which meta.settings stores the plugin configuration (also used by public/admin.js). */
 const SETTINGS_KEY = 'topic-icons';
+
+// Update notices on the ACP page (lib/update-check.js); public plugin, with a link to the release notes.
+const updates = updateCheck.forNodeBB({
+	id: 'nodebb-plugin-topic-icons',
+	version: require('./package.json').version,
+	isPrivate: false,
+	settingsHash: `${SETTINGS_KEY}-update-check`,
+});
 /** Sub-folder of NodeBB's upload_path for icons uploaded from the ACP. */
 const UPLOAD_FOLDER = 'topic-icons';
 /**
@@ -505,6 +514,7 @@ plugin.init = async function ({ router }) {
 			coverState: covers.normalize(await meta.settings.get(SETTINGS_KEY)),
 			// The page is open to admin:settings, uploads to administrators only.
 			canUpload: await user.isAdministrator(req.uid),
+			...(await updates.templateData()),
 		});
 	});
 
@@ -539,6 +549,7 @@ plugin.init = async function ({ router }) {
 	}
 
 	pubsub.on(`action:settings.set.${SETTINGS_KEY}`, () => store.invalidate());
+	updates.start();
 };
 
 /*

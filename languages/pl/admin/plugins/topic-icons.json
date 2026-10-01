@@ -91,5 +91,11 @@
 	"error.category-covers": "Okładki kategorii nie są poprawnym JSON-em.",
 	"error.category-cover-url": "Kategoria %1: okładka musi być ścieżką w serwisie (/…) albo adresem https zakończonym na .png, .jpg, .jpeg, .webp, .gif lub .svg.",
 
-	"checks": "Do poprawienia"
+	"checks": "Do poprawienia",
+	"update.available": "Dostępna wersja %1",
+	"update.notes": "co nowego",
+	"update.private": "zaktualizuj skryptem wdrożenia",
+	"update.check": "Sprawdzaj aktualizacje",
+	"update.check-help": "Raz na dobę forum pobiera z updates.wirelab.pl numer najnowszej wersji tego pluginu: zwykłe zapytanie GET, bez wysyłania żadnych danych o forum. Gdy wyłączone, nie ma żadnych zapytań.",
+	"update.saved": "Zapisano ustawienie sprawdzania aktualizacji"
 }
