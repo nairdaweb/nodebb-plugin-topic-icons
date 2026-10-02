@@ -35,7 +35,11 @@ test('checkUpload: extension, MIME type and content must agree; size limit', () 
 	assert.deepEqual(U.checkUpload({ originalname: 'a.svg', mimetype: 'image/svg+xml', size: 100 }, SVG), { ext: 'svg' });
 	assert.deepEqual(U.checkUpload({ originalname: 'a.png', mimetype: 'image/png', size: 100 }, SVG), { error: 'upload-type' }, 'renamed SVG');
 	assert.deepEqual(U.checkUpload({ originalname: 'a.png', mimetype: 'image/svg+xml', size: 100 }, PNG), { error: 'upload-type' });
-	assert.deepEqual(U.checkUpload({ originalname: 'a.gif', mimetype: 'image/gif', size: 100 }, PNG), { error: 'upload-type' });
+	const GIF = Buffer.from('GIF89a\x01\x00\x01\x00');
+	assert.deepEqual(U.checkUpload({ originalname: 'a.gif', mimetype: 'image/gif', size: 100 }, GIF), { ext: 'gif' }, 'GIF icon');
+	assert.deepEqual(U.checkUpload({ originalname: 'a.gif', mimetype: 'image/gif', size: 100 }, PNG), { error: 'upload-type' }, 'PNG renamed to .gif');
+	assert.deepEqual(U.checkUpload({ originalname: 'a.gif', mimetype: 'image/gif', size: U.MAX_BYTES + 1 }, GIF), { error: 'upload-size' });
+	assert.deepEqual(U.checkUpload({ originalname: 'a.jpg', mimetype: 'image/jpeg', size: 100 }, GIF), { error: 'upload-type' }, 'JPEG is cover-only');
 	assert.deepEqual(U.checkUpload({ originalname: 'a.png', size: U.MAX_BYTES + 1 }, PNG), { error: 'upload-size' });
 	assert.deepEqual(U.checkUpload({ originalname: 'a.png', size: 0 }, PNG), { error: 'upload-missing' });
 	assert.deepEqual(U.checkUpload(null, PNG), { error: 'upload-missing' });

@@ -3,6 +3,19 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] - 2026-10-03
+
+### Added
+- Animated GIF icons (GIF joins PNG, WebP and SVG in the ACP library; animated WebP and APNG already worked).
+- Wide icons: an icon has a fixed height and its width follows the image, up to `--topic-icon-max-width`
+  (default 10rem), so logos and banners are no longer squeezed into a square. Square icons look as before.
+
+### Changed
+- The size limit for an icon upload is 512 KB (was 256 KB), so that short animations fit.
+- The ACP library preview keeps the aspect ratio too.
+
+Thanks to Shlee for the request (#1).
+
 ## [1.2.0] - 2026-10-01
 
 ### Added

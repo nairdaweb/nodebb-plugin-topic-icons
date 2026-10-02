@@ -1,6 +1,6 @@
 {
   "name": "nodebb-plugin-topic-icons",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Topic icons and covers for NodeBB 4: authors pick an icon from an admin-managed library in the composer; icons appear in topic lists and topic headers. Topics without a thumbnail can show the first image of their first post or a per-category default cover. Per-category icon sets and defaults, permissions, server-side validation; translated (en-GB, pl).",
   "main": "library.js",
   "license": "MIT",

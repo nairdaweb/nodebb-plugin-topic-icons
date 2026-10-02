@@ -136,7 +136,7 @@ define('admin/plugins/topic-icons', ['settings', 'alerts', 'translator', 'bootbo
 		}).join('');
 		const placeholder = icon.key ? '[[topic-icons:icon.' + icon.key + ']]' : tx('name-placeholder');
 		return '<tr data-i="' + i + '">' +
-			'<td>' + (src ? '<img class="topic-icons-acp__img" src="' + esc(src) + '" alt="" width="40" height="40" referrerpolicy="no-referrer">' : '<span class="topic-icons-acp__img d-inline-block bg-light"></span>') + '</td>' +
+			'<td>' + (src ? '<img class="topic-icons-acp__img" src="' + esc(src) + '" alt="" height="40" referrerpolicy="no-referrer">' : '<span class="topic-icons-acp__img d-inline-block bg-light"></span>') + '</td>' +
 			'<td style="min-width:12rem"><input type="text" class="form-control form-control-sm" maxlength="' + I.MAX_NAME + '" data-field="name" value="' + esc(icon.name) + '" placeholder="' + placeholder + '"></td>' +
 			'<td style="min-width:16rem"><div class="input-group input-group-sm">' +
 				'<input type="text" class="form-control" data-field="url" value="' + esc(icon.url) + '" placeholder="/assets/uploads/… or https://…">' +

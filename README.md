@@ -28,7 +28,7 @@ default cover of their category, all in one uniform frame.
   available in the selected category, with a preview of the topic row. The icon can be changed when
   editing the first post; a current icon that is no longer available is shown as such and can be
   replaced or removed. The pick is kept in composer drafts. Keyboard: arrow keys, Home and End.
-- **Library in the ACP:** upload (PNG, WebP, SVG up to 256 KB), rename, reorder, limit to categories,
+- **Library in the ACP:** upload (PNG, WebP, GIF, SVG up to 512 KB; animated GIF/WebP work, wide logos keep their aspect ratio), rename, reorder, limit to categories,
   switch off, remove. Eight neutral built-in icons: question, guide, problem, idea, project,
   showcase, announcement, discussion.
 - **Per-category sets and defaults:** each icon can be limited to some categories; each category can
@@ -195,7 +195,7 @@ never turn into translation tokens) and can be printed raw, e.g. in `partials/to
 
 Themes without such a slot get the icon in front of the topic title from `public/client.js`.
 Sizes are CSS custom properties: `--topic-icon-size`, `--topic-icon-size-header`,
-`--topic-icon-size-inline`, `--topic-icon-radius`.
+`--topic-icon-size-inline`, `--topic-icon-max-width`, `--topic-icon-radius`.
 
 Covers need no template changes: they are entries of `thumbs` (`{ id, name, path, url, cover }`,
 `cover` being `"auto"` or `"category"`). Topics that show a picture also carry

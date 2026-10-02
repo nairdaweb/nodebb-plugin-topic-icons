@@ -3,6 +3,7 @@
 //   --topic-icon-size        icon in topic lists (40px, 32px on phones)
 //   --topic-icon-size-header icon in the topic header
 //   --topic-icon-size-inline icon put in front of a title by public/client.js
+//   --topic-icon-max-width   widest an icon may get (default: 4 x the height; icons keep their aspect ratio)
 //   --topic-icon-radius      corner radius
 // Topic covers (thumbnails in topic lists and the topic header, see "Topic covers" below):
 //   --topic-cover-width        width in topic lists (5.33rem, 4rem on phones)
@@ -16,6 +17,7 @@
 	--topic-icon-size-header: 2.5rem;
 	--topic-icon-size-inline: 1.75rem;
 	--topic-icon-radius: 0.5rem;
+	--topic-icon-max-width: 10rem;
 }
 
 @media (max-width: 575.98px) {
@@ -29,7 +31,9 @@
 .topic-icon {
 	display: inline-flex;
 	flex-shrink: 0;
-	width: var(--topic-icon-size);
+	// Fixed height, width follows the image (square stays square, wide logos get wider).
+	width: auto;
+	max-width: var(--topic-icon-max-width);
 	height: var(--topic-icon-size);
 	border-radius: var(--topic-icon-radius);
 	overflow: hidden;
@@ -37,7 +41,8 @@
 
 	.topic-icon__img {
 		display: block;
-		width: 100%;
+		width: auto;
+		max-width: 100%;
 		height: 100%;
 		object-fit: contain;
 	}
@@ -55,14 +60,14 @@
 	vertical-align: middle;
 
 	.topic-icon {
-		width: var(--topic-icon-size-inline);
+		width: auto;
 		height: var(--topic-icon-size-inline);
 		border-radius: calc(var(--topic-icon-radius) * 0.75);
 	}
 }
 
 .topic-icons-inline--header .topic-icon {
-	width: var(--topic-icon-size-header);
+	width: auto;
 	height: var(--topic-icon-size-header);
 }
 
@@ -181,13 +186,14 @@
 }
 
 .topic-icons-preview .topic-icon {
-	width: var(--topic-icon-size);
+	width: auto;
 	height: var(--topic-icon-size);
 }
 
 // ACP library previews.
 .topic-icons-acp__img {
-	width: 40px;
+	width: auto;
+	max-width: 10rem;
 	height: 40px;
 	object-fit: contain;
 	border-radius: 0.375rem;
